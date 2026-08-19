@@ -4,7 +4,9 @@ import {
   Target, MessageSquare, Plus, X, ChevronRight, TrendingUp,
   UserCircle2, Smile, Meh, HelpCircle, Loader2, Flame, Trophy, Crown,
   Lightbulb, Bot, Armchair, Code2, Star, Lock, Zap, BarChart3, Gift,
-  LayoutGrid, Medal, ClipboardList, LogOut, LogIn
+  LayoutGrid, Medal, ClipboardList, LogOut, LogIn,
+  Settings, Bell, GraduationCap, ShieldCheck, Download, Printer,
+  CalendarDays, UserPlus, Building2, Percent, ListChecks, Trash2
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 
@@ -108,9 +110,30 @@ const QUALITIES = [
   { label: 'Creativity', category: 'Creativity' },
 ];
 
+/* ---------------------------- classes & competition ---------------------------- */
+
+const DEFAULT_CLASSES = [
+  { id: 'c1', name: '6A' }, { id: 'c2', name: '6B' }, { id: 'c3', name: '6C' },
+  { id: 'c4', name: '7A' }, { id: 'c5', name: '7B' }, { id: 'c6', name: '7C' },
+];
+
+const BEHAVIOR_ASSESS_CATEGORIES = CATEGORY_ORDER.filter(c => PILLAR_MAP[c] === 'behavior');
+// Respect, Cooperation(=Teamwork), Participation, Responsibility, Discipline, Digital Citizenship
+const ACADEMIC_CATEGORIES = ['Assignments', 'Tests', 'Projects', 'Participation', 'Problem Solving', 'Creativity'];
+
+const DEFAULT_COMPETITION_WEIGHTS = { points: 40, behavior: 30, academic: 30 };
+
+function monthKeyOf(iso) { return (iso || '').slice(0, 7); }
+function currentMonthKey() { return new Date().toISOString().slice(0, 7); }
+function monthLabel(key) {
+  if (!key) return '';
+  const [y, m] = key.split('-').map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+}
+
 function defaultState() {
   return {
-    students: DEFAULT_STUDENTS,
+    students: DEFAULT_STUDENTS.map(s => ({ ...s, classId: 'c1' })),
     behaviors: DEFAULT_BEHAVIORS,
     rewards: DEFAULT_REWARDS,
     academicPoints: {},
@@ -125,6 +148,15 @@ function defaultState() {
       id: 'm1', text: 'Help your team solve today\u2019s robotics challenge.',
       xpReward: 30, behaviorPoints: 10, badgeHint: 'Team Player', completedBy: [],
     },
+    // --- school-wide extension ---
+    classes: DEFAULT_CLASSES,
+    teacherAssignments: {}, // { [email]: { isAdmin, classId } }
+    behaviorAssessments: [], // { id, studentId, classId, teacherEmail, date, ratings:{cat:1-5}, comment }
+    academicAssessments: [], // { id, studentId, classId, teacherEmail, date, scores:{cat:0-100}, comment }
+    challenges: [], // { id, name, description, startDate, endDate, points, scope:'student'|'class', eligibleClasses:[], status, completedBy:[] }
+    notifications: [], // { id, scope:'student'|'class'|'broadcast', targetId, message, date, read }
+    competitions: [], // finalized monthly snapshots: { monthKey, weights, results:[...], winnerClassId, closedAt }
+    competitionConfig: { weights: DEFAULT_COMPETITION_WEIGHTS },
   };
 }
 
@@ -244,6 +276,73 @@ function autoAwardBadges(state) {
   });
   return next;
 }
+/* ------------------------- classes, assessments, competition ------------------------- */
+
+function studentsInClass(state, classId) { return state.students.filter(s => s.classId === classId); }
+function className(state, classId) { return (state.classes.find(c => c.id === classId) || {}).name || 'Unassigned'; }
+function classPointsTotal(state, classId) { return studentsInClass(state, classId).reduce((s, st) => s + totalXP(state, st.id), 0); }
+
+function studentBehaviorAssessments(state, studentId) { return state.behaviorAssessments.filter(a => a.studentId === studentId).sort((a, b) => b.date.localeCompare(a.date)); }
+function studentAcademicAssessments(state, studentId) { return state.academicAssessments.filter(a => a.studentId === studentId).sort((a, b) => b.date.localeCompare(a.date)); }
+
+function avgOf(obj) { const v = Object.values(obj); return v.length ? v.reduce((a, b) => a + Number(b), 0) / v.length : null; }
+
+function studentBehaviorScorePct(state, studentId) {
+  const latest = studentBehaviorAssessments(state, studentId)[0];
+  if (!latest) return null;
+  const avg = avgOf(latest.ratings); // 1-5 scale
+  return avg == null ? null : Math.round(avg * 20);
+}
+function studentAcademicScorePct(state, studentId) {
+  const latest = studentAcademicAssessments(state, studentId)[0];
+  if (!latest) return null;
+  const avg = avgOf(latest.scores); // already 0-100
+  return avg == null ? null : Math.round(avg);
+}
+
+function classMonthlyPointsAvg(state, classId, monthKey) {
+  const studs = studentsInClass(state, classId);
+  if (!studs.length) return 0;
+  const total = studs.reduce((sum, s) => sum + state.behaviorLog.filter(l => l.studentId === s.id && monthKeyOf(l.date) === monthKey).reduce((a, l) => a + l.points, 0), 0);
+  return total / studs.length;
+}
+function classBehaviorScore(state, classId, monthKey) {
+  const rows = state.behaviorAssessments.filter(a => a.classId === classId && monthKeyOf(a.date) === monthKey);
+  if (!rows.length) return 0;
+  const vals = rows.map(r => avgOf(r.ratings)).filter(v => v != null);
+  return vals.length ? Math.round((vals.reduce((a, b) => a + b, 0) / vals.length) * 20) : 0;
+}
+function classAcademicScore(state, classId, monthKey) {
+  const rows = state.academicAssessments.filter(a => a.classId === classId && monthKeyOf(a.date) === monthKey);
+  if (!rows.length) return 0;
+  const vals = rows.map(r => avgOf(r.scores)).filter(v => v != null);
+  return vals.length ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : 0;
+}
+
+function computeCompetition(state, monthKey) {
+  const w = state.competitionConfig.weights;
+  const wSum = (Number(w.points) + Number(w.behavior) + Number(w.academic)) || 1;
+  const rows = state.classes.map(c => {
+    const pointsAvg = classMonthlyPointsAvg(state, c.id, monthKey);
+    const behaviorScore = classBehaviorScore(state, c.id, monthKey);
+    const academicScore = classAcademicScore(state, c.id, monthKey);
+    return { classId: c.id, className: c.name, studentCount: studentsInClass(state, c.id).length, pointsAvg, behaviorScore, academicScore };
+  });
+  const maxAvg = Math.max(1, ...rows.map(r => r.pointsAvg));
+  return {
+    monthKey, weights: w,
+    results: rows.map(r => {
+      const pointsScore = Math.round((r.pointsAvg / maxAvg) * 100);
+      const finalScore = Math.round(((pointsScore * w.points + r.behaviorScore * w.behavior + r.academicScore * w.academic) / wSum) * 10) / 10;
+      return { ...r, pointsScore, finalScore };
+    }).sort((a, b) => b.finalScore - a.finalScore).map((r, i) => ({ ...r, rank: i + 1 })),
+  };
+}
+
+function pushNotification(state, notif) {
+  return [{ id: uid('ntf'), date: new Date().toISOString(), read: false, ...notif }, ...state.notifications].slice(0, 200);
+}
+
 function ageTheme(ageGroup) {
   if (ageGroup === 'primary') return {
     greet: n => `Welcome back, ${n}! \u{1F44B}`,
@@ -257,6 +356,94 @@ function ageTheme(ageGroup) {
     greet: n => `Welcome back, ${n}`,
     xpToast: n => `+${n} XP`,
   };
+}
+
+/* ------------------------------ demo data generator ------------------------------ */
+// Additive only: never touches existing classes/students. Safe to run once from
+// the Admin > Classes tab to populate the other demo classes for evaluation.
+
+const DEMO_ROSTER = {
+  c2: ['Hassan', 'Nour', 'Khalid', 'Reem', 'Fahad', 'Dana'],
+  c3: ['Zayd', 'Lina', 'Tariq', 'Huda', 'Rashid', 'Mona'],
+  c4: ['Salem', 'Aisha', 'Waleed', 'Farah', 'Nasser'],
+  c5: ['Bader', 'Yara', 'Faisal', 'Amina', 'Talal'],
+  c6: ['Majed', 'Salma', 'Adel', 'Noor', 'Karim'],
+};
+// tuned so 6C (c3) leads August, matching the target-score example in the spec
+const DEMO_TUNING = {
+  c1: { behavior: 91, academic: 88, pointsPerStudent: 78 },
+  c2: { behavior: 94, academic: 86, pointsPerStudent: 82 },
+  c3: { behavior: 92, academic: 93, pointsPerStudent: 95 },
+  c4: { behavior: 87, academic: 84, pointsPerStudent: 70 },
+  c5: { behavior: 85, academic: 81, pointsPerStudent: 65 },
+  c6: { behavior: 88, academic: 85, pointsPerStudent: 72 },
+};
+
+function buildDemoExpansion(state, teacherEmail) {
+  const existingIds = new Set(state.students.map(s => s.id));
+  const newStudents = [];
+  const newBehaviorLog = [];
+  const newBehaviorAssessments = [];
+  const newAcademicAssessments = [];
+  const thisMonth = currentMonthKey();
+  const ageGroups = ['primary', 'middle', 'middle', 'high', 'high'];
+
+  Object.entries(DEMO_ROSTER).forEach(([classId, names]) => {
+    names.forEach((name, i) => {
+      const id = `demo_${classId}_${i}`;
+      if (existingIds.has(id)) return;
+      newStudents.push({ id, name, ageGroup: ageGroups[i % ageGroups.length], classId });
+    });
+  });
+
+  const allDemoStudents = [...state.students.filter(s => s.classId), ...newStudents];
+  Object.keys(DEMO_TUNING).forEach(classId => {
+    const tune = DEMO_TUNING[classId];
+    const studs = allDemoStudents.filter(s => s.classId === classId);
+    studs.forEach((s, idx) => {
+      const jitter = (idx % 3) - 1; // -1,0,1 small spread per student
+      // behavior recognitions this month (drives class points score)
+      const recognitions = Math.max(1, Math.round(tune.pointsPerStudent / 10) + jitter);
+      for (let r = 0; r < recognitions; r++) {
+        const b = DEFAULT_BEHAVIORS[(idx + r) % DEFAULT_BEHAVIORS.length];
+        newBehaviorLog.push({
+          id: uid('log'), studentId: s.id, behaviorId: b.id, category: b.category, name: b.name,
+          points: b.points, comment: '', date: `${thisMonth}-${String(2 + (r % 26)).padStart(2, '0')}T09:00:00.000Z`,
+        });
+      }
+      // one behavior assessment + one academic assessment this month
+      const bRatings = {};
+      BEHAVIOR_ASSESS_CATEGORIES.forEach((cat, ci) => { bRatings[cat] = Math.max(1, Math.min(5, Math.round(tune.behavior / 20) + ((idx + ci) % 2 === 0 ? 0 : jitter))); });
+      newBehaviorAssessments.push({ id: uid('ba'), studentId: s.id, classId, teacherEmail: teacherEmail || 'demo@school.local', date: `${thisMonth}-10T09:00:00.000Z`, ratings: bRatings, comment: 'Demo assessment.' });
+
+      const aScores = {};
+      ACADEMIC_CATEGORIES.forEach((cat, ci) => { aScores[cat] = Math.max(50, Math.min(100, tune.academic + (((idx + ci) % 5) - 2))); });
+      newAcademicAssessments.push({ id: uid('aa'), studentId: s.id, classId, teacherEmail: teacherEmail || 'demo@school.local', date: `${thisMonth}-10T09:00:00.000Z`, scores: aScores, comment: 'Demo assessment.' });
+    });
+  });
+
+  const demoCompetitions = [
+    { monthKey: '2026-06', weights: DEFAULT_COMPETITION_WEIGHTS, closedAt: '2026-06-30T18:00:00.000Z', winnerClassId: 'c4',
+      results: [
+        { classId: 'c4', className: '7A', studentCount: 5, pointsAvg: 74, behaviorScore: 90, academicScore: 89, pointsScore: 100, finalScore: 93.7, rank: 1 },
+        { classId: 'c3', className: '6C', studentCount: 6, pointsAvg: 70, behaviorScore: 88, academicScore: 90, pointsScore: 95, finalScore: 91.4, rank: 2 },
+        { classId: 'c2', className: '6B', studentCount: 6, pointsAvg: 68, behaviorScore: 91, academicScore: 84, pointsScore: 92, finalScore: 89.9, rank: 3 },
+        { classId: 'c1', className: '6A', studentCount: 6, pointsAvg: 60, behaviorScore: 89, academicScore: 85, pointsScore: 81, finalScore: 86.0, rank: 4 },
+        { classId: 'c5', className: '7B', studentCount: 5, pointsAvg: 55, behaviorScore: 84, academicScore: 80, pointsScore: 74, finalScore: 79.6, rank: 5 },
+        { classId: 'c6', className: '7C', studentCount: 5, pointsAvg: 52, behaviorScore: 86, academicScore: 82, pointsScore: 70, finalScore: 79.4, rank: 6 },
+      ] },
+    { monthKey: '2026-07', weights: DEFAULT_COMPETITION_WEIGHTS, closedAt: '2026-07-31T18:00:00.000Z', winnerClassId: 'c2',
+      results: [
+        { classId: 'c2', className: '6B', studentCount: 6, pointsAvg: 80, behaviorScore: 93, academicScore: 88, pointsScore: 100, finalScore: 94.3, rank: 1 },
+        { classId: 'c3', className: '6C', studentCount: 6, pointsAvg: 76, behaviorScore: 90, academicScore: 91, pointsScore: 95, finalScore: 93.3, rank: 2 },
+        { classId: 'c1', className: '6A', studentCount: 6, pointsAvg: 65, behaviorScore: 90, academicScore: 86, pointsScore: 81, finalScore: 85.6, rank: 3 },
+        { classId: 'c4', className: '7A', studentCount: 5, pointsAvg: 60, behaviorScore: 86, academicScore: 83, pointsScore: 75, finalScore: 81.6, rank: 4 },
+        { classId: 'c6', className: '7C', studentCount: 5, pointsAvg: 58, behaviorScore: 87, academicScore: 84, pointsScore: 73, finalScore: 81.5, rank: 5 },
+        { classId: 'c5', className: '7B', studentCount: 5, pointsAvg: 54, behaviorScore: 83, academicScore: 79, pointsScore: 68, finalScore: 76.9, rank: 6 },
+      ] },
+  ];
+
+  return { newStudents, newBehaviorLog, newBehaviorAssessments, newAcademicAssessments, demoCompetitions };
 }
 
 /* ---------------------------------- bits -------------------------------------- */
@@ -399,6 +586,23 @@ function Field({ label, children }) {
 }
 const inputStyle = { width: '100%', background: COLORS.panelSoft, border: `1px solid ${COLORS.border}`, borderRadius: 8, padding: '8px 10px', fontSize: 13, color: COLORS.text, outline: 'none' };
 
+function RatingInput({ label, value, onChange, color }) {
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <span className="text-[11.5px] font-semibold" style={{ color: COLORS.text }}>{label}</span>
+      <div className="flex gap-1">
+        {[1, 2, 3, 4, 5].map(n => (
+          <button key={n} type="button" onClick={() => onChange(n)}
+            className="w-6 h-6 rounded-md text-[10px] font-bold flex items-center justify-center border"
+            style={n <= value ? { background: color, borderColor: color, color: '#0B0F16' } : { background: 'transparent', borderColor: COLORS.border, color: COLORS.textFaint }}>
+            {n}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /* ------------------------------- Teacher login modal --------------------------- */
 
 function TeacherLoginModal({ onClose, onSuccess }) {
@@ -462,24 +666,46 @@ export default function App() {
     });
   }, []);
 
+  const email = session?.user?.email;
+  const myAssignment = state && email ? state.teacherAssignments[email] : null;
+
+  // Bootstrap: the very first person to sign in with no admin yet on record becomes admin.
+  useEffect(() => {
+    if (!state || !email) return;
+    if (state.teacherAssignments[email]) return;
+    const hasAdmin = Object.values(state.teacherAssignments).some(a => a.isAdmin);
+    if (!hasAdmin) {
+      persist(prev => ({ ...prev, teacherAssignments: { ...prev.teacherAssignments, [email]: { isAdmin: true, classId: null } } }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state && Object.keys(state.teacherAssignments || {}).length, email]);
+
   if (!state) {
     return <div className="min-h-screen flex items-center justify-center" style={{ background: COLORS.bg }}>
       <Loader2 className="animate-spin" style={{ color: COLORS.robotics }} size={28} />
     </div>;
   }
 
+  const myClassId = myAssignment?.classId || null;
+  const isAdmin = !!myAssignment?.isAdmin;
+  const teacherStudents = myClassId ? state.students.filter(s => s.classId === myClassId) : state.students;
+
   function awardBehavior({ studentId, behaviorId, points, comment }) {
     const behavior = state.behaviors.find(b => b.id === behaviorId);
     const entry = { id: uid('log'), studentId, behaviorId, category: behavior.category, name: behavior.name, points: Number(points), comment, date: new Date().toISOString() };
-    persist(prev => ({ ...prev, behaviorLog: [...prev.behaviorLog, entry] }));
     const student = state.students.find(s => s.id === studentId);
+    persist(prev => ({
+      ...prev,
+      behaviorLog: [...prev.behaviorLog, entry],
+      notifications: pushNotification(prev, { scope: 'student', targetId: studentId, message: `\u{1F389} Congratulations! You earned ${points} points for ${behavior.name}.` }),
+    }));
     const theme = ageTheme(student.ageGroup);
     setToast({ kind: 'xp', title: theme.xpToast(points), body: `${student.name} \u2014 ${behavior.name}` });
     setShowRecognize(false);
   }
 
   function handleRoleClick(target) {
-    if (target === 'teacher' && !session) { setShowLogin(true); return; }
+    if (target !== 'student' && !session) { setShowLogin(true); return; }
     setRole(target);
   }
   async function handleSignOut() {
@@ -491,7 +717,7 @@ export default function App() {
     <div className="min-h-screen" style={{ background: COLORS.bg, color: COLORS.text, fontFamily: 'ui-sans-serif, system-ui, -apple-system, sans-serif' }}>
       <Toast toast={toast} />
       <header className="sticky top-0 z-40 border-b" style={{ background: `${COLORS.bg}F2`, borderColor: COLORS.border, backdropFilter: 'blur(6px)' }}>
-        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
+        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: `linear-gradient(135deg, ${COLORS.robotics}, ${COLORS.coding})` }}>
               <Zap size={16} style={{ color: '#0B0F16' }} strokeWidth={2.5} />
@@ -507,9 +733,13 @@ export default function App() {
                 style={role === 'student' ? { background: COLORS.xp, color: '#0B0F16' } : { color: COLORS.textMuted }}>Student</button>
               <button onClick={() => handleRoleClick('teacher')} className="px-3 py-1.5 rounded-md text-xs font-bold transition"
                 style={role === 'teacher' ? { background: COLORS.robotics, color: '#0B0F16' } : { color: COLORS.textMuted }}>Teacher</button>
+              {session && isAdmin && (
+                <button onClick={() => handleRoleClick('admin')} className="px-3 py-1.5 rounded-md text-xs font-bold transition"
+                  style={role === 'admin' ? { background: COLORS.challenge, color: '#0B0F16' } : { color: COLORS.textMuted }}>Admin</button>
+              )}
             </div>
-            {role === 'teacher' && session && (
-              <button onClick={handleSignOut} title={session.user.email} className="p-2 rounded-lg border" style={{ borderColor: COLORS.border, color: COLORS.textMuted }}>
+            {(role === 'teacher' || role === 'admin') && session && (
+              <button onClick={handleSignOut} title={email} className="p-2 rounded-lg border" style={{ borderColor: COLORS.border, color: COLORS.textMuted }}>
                 <LogOut size={14} />
               </button>
             )}
@@ -518,19 +748,32 @@ export default function App() {
       </header>
 
       <main className="max-w-5xl mx-auto px-4 py-5">
-        {role === 'student' ? (
+        {role === 'student' && (
           <StudentApp state={state} activeStudentId={activeStudentId} setActiveStudentId={setActiveStudentId} persist={persist} setToast={setToast} />
-        ) : (
-          <TeacherApp state={state} persist={persist} />
+        )}
+        {role === 'teacher' && session && (
+          myClassId || isAdmin ? (
+            <TeacherApp state={state} persist={persist} classId={myClassId} email={email} setToast={setToast} />
+          ) : (
+            <Card>
+              <div className="text-sm font-bold mb-1">Waiting for class assignment</div>
+              <div className="text-xs" style={{ color: COLORS.textMuted }}>
+                You're signed in as <b>{email}</b> but not yet assigned to a class. Ask your admin to assign you under Admin {'\u2192'} Team.
+              </div>
+            </Card>
+          )
+        )}
+        {role === 'admin' && session && isAdmin && (
+          <AdminApp state={state} persist={persist} email={email} />
         )}
       </main>
 
-      {showRecognize && <RecognizeModal state={state} onClose={() => setShowRecognize(false)} onSubmit={awardBehavior} />}
+      {showRecognize && <RecognizeModal state={{ ...state, students: teacherStudents.length ? teacherStudents : state.students }} onClose={() => setShowRecognize(false)} onSubmit={awardBehavior} />}
       {showLogin && (
         <TeacherLoginModal onClose={() => setShowLogin(false)} onSuccess={() => { setShowLogin(false); setRole('teacher'); }} />
       )}
 
-      {role === 'teacher' && session && (
+      {(role === 'teacher' || role === 'admin') && session && (
         <button onClick={() => setShowRecognize(true)}
           className="fixed bottom-5 right-5 z-30 rounded-full shadow-2xl flex items-center gap-2 px-4 py-3 font-bold text-xs"
           style={{ background: COLORS.xp, color: '#0B0F16' }}>
@@ -550,11 +793,15 @@ function StudentApp({ state, activeStudentId, setActiveStudentId, persist, setTo
   const xp = totalXP(state, student.id);
   const lvl = levelInfo(xp);
 
+  const myNotifs = state.notifications.filter(n => n.scope === 'broadcast' || (n.scope === 'student' && n.targetId === student.id) || (n.scope === 'class' && n.targetId === student.classId));
+  const unread = myNotifs.filter(n => !n.read).length;
+
   const tabs = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutGrid },
     { id: 'achievements', label: 'Achievements', icon: Trophy },
     { id: 'store', label: 'Store', icon: Gift },
     { id: 'leaderboard', label: 'Leaderboard', icon: BarChart3 },
+    { id: 'notifications', label: unread ? `Alerts (${unread})` : 'Alerts', icon: Bell },
   ];
 
   function addReflection(feeling, improvement) {
@@ -583,6 +830,11 @@ function StudentApp({ state, activeStudentId, setActiveStudentId, persist, setTo
         <span className="text-[10px] font-bold uppercase px-2 py-1 rounded-full" style={{ background: COLORS.panelAlt, color: COLORS.textFaint }}>
           {student.ageGroup} view
         </span>
+        {student.classId && (
+          <span className="text-[10px] font-bold uppercase px-2 py-1 rounded-full flex items-center gap-1" style={{ background: `${COLORS.robotics}22`, color: COLORS.robotics }}>
+            <Building2 size={10} /> {className(state, student.classId)}
+          </span>
+        )}
       </div>
 
       <NavTabs tabs={tabs} active={tab} onChange={setTab} accent={COLORS.xp} />
@@ -591,6 +843,18 @@ function StudentApp({ state, activeStudentId, setActiveStudentId, persist, setTo
       {tab === 'achievements' && <AchievementsTab state={state} student={student} />}
       {tab === 'store' && <StoreTab state={state} student={student} onRedeem={redeem} />}
       {tab === 'leaderboard' && <LeaderboardTab state={state} />}
+      {tab === 'notifications' && (
+        <div className="space-y-2">
+          <SectionLabel icon={Bell} color={COLORS.xp}>Notifications</SectionLabel>
+          {myNotifs.length === 0 && <div className="text-xs" style={{ color: COLORS.textFaint }}>No notifications yet.</div>}
+          {myNotifs.slice(0, 30).map(n => (
+            <div key={n.id} className="text-xs rounded-lg px-3 py-2.5" style={{ background: COLORS.panelAlt, color: COLORS.text }}>
+              <div>{n.message}</div>
+              <div className="text-[10px] mt-0.5" style={{ color: COLORS.textFaint }}>{new Date(n.date).toLocaleString()}</div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -599,6 +863,11 @@ function DashboardTab({ state, student, theme, lvl, xp, onReflect }) {
   const streak = computeStreak(state, student.id);
   const badgeCount = (state.studentBadges[student.id] || []).length;
   const behaviorPts = behaviorPillarPoints(state, student.id);
+  const behaviorPct = studentBehaviorScorePct(state, student.id);
+  const academicPct = studentAcademicScorePct(state, student.id);
+  const comp = student.classId ? computeCompetition(state, currentMonthKey()) : null;
+  const myClassRow = comp ? comp.results.find(r => r.classId === student.classId) : null;
+  const activeChallenges = state.challenges.filter(c => c.status === 'active' && (!c.eligibleClasses?.length || c.eligibleClasses.includes(student.classId)));
   const mission = state.mission;
   const missionDone = mission.completedBy.includes(student.id);
   const [feeling, setFeeling] = useState(null);
@@ -639,8 +908,27 @@ function DashboardTab({ state, student, theme, lvl, xp, onReflect }) {
         <StatChip icon={Flame} label="Streak" value={streak} color={COLORS.reward} />
         <StatChip icon={Trophy} label="Badges" value={badgeCount} color={COLORS.challenge} />
         <StatChip icon={Rocket} label="Level" value={lvl.level} color={COLORS.robotics} />
-        <StatChip icon={Heart} label="Behavior" value={behaviorPts} color={COLORS.behavior} />
+        <StatChip icon={Heart} label="Behavior" value={behaviorPct != null ? `${behaviorPct}%` : behaviorPts} color={COLORS.behavior} />
+        {academicPct != null && <StatChip icon={GraduationCap} label="Academic" value={`${academicPct}%`} color={COLORS.coding} />}
+        {myClassRow && <StatChip icon={Trophy} label="Class Rank" value={`#${myClassRow.rank}`} color={COLORS.xp} />}
       </div>
+
+      {activeChallenges.length > 0 && (
+        <Card style={{ borderColor: `${COLORS.reward}55` }}>
+          <SectionLabel icon={ListChecks} color={COLORS.reward}>Active Challenges</SectionLabel>
+          <div className="space-y-2">
+            {activeChallenges.map(c => (
+              <div key={c.id} className="flex items-center justify-between text-xs rounded-lg px-3 py-2" style={{ background: COLORS.panelAlt }}>
+                <div>
+                  <div className="font-bold" style={{ color: COLORS.text }}>{c.name}</div>
+                  <div style={{ color: COLORS.textFaint }}>{c.description}</div>
+                </div>
+                <span className="font-mono font-bold shrink-0 ml-2" style={{ color: COLORS.reward }}>+{c.points}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       <Card style={{ borderColor: `${COLORS.challenge}55` }}>
         <SectionLabel icon={Target} color={COLORS.challenge}>Today's Mission</SectionLabel>
@@ -862,10 +1150,13 @@ function LeaderboardTab({ state }) {
 
 /* --------------------------------- Teacher App ----------------------------------- */
 
-function TeacherApp({ state, persist }) {
+function TeacherApp({ state, persist, classId, email, setToast }) {
   const [tab, setTab] = useState('overview');
+  const scoped = { ...state, students: classId ? state.students.filter(s => s.classId === classId) : state.students };
   const tabs = [
     { id: 'overview', label: 'Overview', icon: LayoutGrid },
+    { id: 'assessments', label: 'Assessments', icon: ClipboardList },
+    { id: 'challenges', label: 'Challenges', icon: ListChecks },
     { id: 'missions', label: 'Missions', icon: Target },
     { id: 'badges', label: 'Badges', icon: Trophy },
     { id: 'store', label: 'Store', icon: Gift },
@@ -874,16 +1165,34 @@ function TeacherApp({ state, persist }) {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-lg font-black">Teacher Console</h1>
-        <p className="text-xs" style={{ color: COLORS.textFaint }}>{'Reward \u2192 recognize \u2192 encourage \u2192 improve.'}</p>
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div>
+          <h1 className="text-lg font-black">Teacher Console {classId ? `\u2014 ${className(state, classId)}` : ''}</h1>
+          <p className="text-xs" style={{ color: COLORS.textFaint }}>{'Reward \u2192 recognize \u2192 encourage \u2192 improve.'}</p>
+        </div>
+        {classId && <ClassCompetitionChip state={state} classId={classId} />}
       </div>
       <NavTabs tabs={tabs} active={tab} onChange={setTab} accent={COLORS.robotics} />
-      {tab === 'overview' && <OverviewTab state={state} persist={persist} />}
-      {tab === 'missions' && <MissionsTab state={state} persist={persist} />}
-      {tab === 'badges' && <BadgesTab state={state} />}
-      {tab === 'store' && <StoreManageTab state={state} persist={persist} />}
-      {tab === 'analytics' && <AnalyticsTab state={state} />}
+      {tab === 'overview' && <OverviewTab state={scoped} persist={persist} />}
+      {tab === 'assessments' && <AssessmentsTab state={scoped} persist={persist} classId={classId} email={email} setToast={setToast} />}
+      {tab === 'challenges' && <ChallengesTab state={state} persist={persist} classId={classId} scopedStudents={scoped.students} isAdmin={!classId} />}
+      {tab === 'missions' && <MissionsTab state={scoped} persist={persist} />}
+      {tab === 'badges' && <BadgesTab state={scoped} />}
+      {tab === 'store' && <StoreManageTab state={scoped} persist={persist} />}
+      {tab === 'analytics' && <AnalyticsTab state={scoped} />}
+    </div>
+  );
+}
+
+function ClassCompetitionChip({ state, classId }) {
+  const comp = computeCompetition(state, currentMonthKey());
+  const row = comp.results.find(r => r.classId === classId);
+  if (!row) return null;
+  return (
+    <div className="text-xs font-bold rounded-lg px-3 py-2 border flex items-center gap-2" style={{ borderColor: COLORS.border, background: COLORS.panelAlt }}>
+      <Trophy size={13} style={{ color: COLORS.xp }} />
+      <span>Class Rank #{row.rank}/{comp.results.length}</span>
+      <span className="font-mono" style={{ color: COLORS.xp }}>{row.finalScore}</span>
     </div>
   );
 }
@@ -894,7 +1203,7 @@ function OverviewTab({ state, persist }) {
   const roster = [...state.students].sort((a, b) => totalXP(state, b.id) - totalXP(state, a.id));
   const mostImproved = computeMostImproved(state);
   const needsEncouragement = computeNeedsEncouragement(state);
-  const avgXP = Math.round(state.students.reduce((s, st) => s + totalXP(state, st.id), 0) / state.students.length) || 0;
+  const avgXP = state.students.length ? Math.round(state.students.reduce((s, st) => s + totalXP(state, st.id), 0) / state.students.length) : 0;
   const totalBadges = Object.values(state.studentBadges).reduce((s, arr) => s + arr.length, 0);
   const activeStreaks = state.students.filter(st => computeStreak(state, st.id) >= 2).length;
 
@@ -1155,6 +1464,195 @@ function AnalyticsTab({ state }) {
   );
 }
 
+/* ------------------------------- Assessments (behavior + academic) ---------------------------------- */
+
+function AssessmentsTab({ state, persist, classId, email, setToast }) {
+  const [mode, setMode] = useState(null); // 'behavior' | 'academic'
+  const [studentId, setStudentId] = useState(state.students[0]?.id);
+
+  function saveBehavior(ratings, comment) {
+    const entry = { id: uid('ba'), studentId, classId: classId || state.students.find(s => s.id === studentId)?.classId, teacherEmail: email, date: new Date().toISOString(), ratings, comment };
+    persist(prev => ({ ...prev, behaviorAssessments: [entry, ...prev.behaviorAssessments] }));
+    setToast && setToast({ kind: 'reflect', title: 'Behavior assessment saved', body: state.students.find(s => s.id === studentId)?.name });
+    setMode(null);
+  }
+  function saveAcademic(scores, comment) {
+    const entry = { id: uid('aa'), studentId, classId: classId || state.students.find(s => s.id === studentId)?.classId, teacherEmail: email, date: new Date().toISOString(), scores, comment };
+    persist(prev => ({ ...prev, academicAssessments: [entry, ...prev.academicAssessments] }));
+    setToast && setToast({ kind: 'reflect', title: 'Academic assessment saved', body: state.students.find(s => s.id === studentId)?.name });
+    setMode(null);
+  }
+
+  if (!state.students.length) return <div className="text-xs" style={{ color: COLORS.textFaint }}>No students in this class yet.</div>;
+
+  return (
+    <div className="space-y-5">
+      <Card>
+        <div className="grid sm:grid-cols-[1fr_auto_auto] gap-2 items-end">
+          <Field label="Student">
+            <select value={studentId} onChange={e => setStudentId(e.target.value)} style={inputStyle}>
+              {state.students.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          </Field>
+          <button onClick={() => setMode('behavior')} className="text-xs font-bold rounded-lg px-3 py-2" style={{ background: COLORS.behavior, color: '#0B0F16' }}>+ Behavior</button>
+          <button onClick={() => setMode('academic')} className="text-xs font-bold rounded-lg px-3 py-2" style={{ background: COLORS.coding, color: '#0B0F16' }}>+ Academic</button>
+        </div>
+      </Card>
+
+      <div className="grid sm:grid-cols-2 gap-3">
+        <div>
+          <SectionLabel icon={Heart} color={COLORS.behavior}>Behavior History</SectionLabel>
+          <div className="space-y-1.5">
+            {studentBehaviorAssessments(state, studentId).slice(0, 6).map(a => (
+              <Card key={a.id} className="!p-3">
+                <div className="flex justify-between text-xs font-bold mb-1"><span>{new Date(a.date).toLocaleDateString()}</span><span style={{ color: COLORS.behavior }}>{Math.round(avgOf(a.ratings) * 20)}%</span></div>
+                {a.comment && <div className="text-[11px]" style={{ color: COLORS.textMuted }}>{a.comment}</div>}
+              </Card>
+            ))}
+            {studentBehaviorAssessments(state, studentId).length === 0 && <div className="text-xs" style={{ color: COLORS.textFaint }}>No assessments yet.</div>}
+          </div>
+        </div>
+        <div>
+          <SectionLabel icon={GraduationCap} color={COLORS.coding}>Academic History</SectionLabel>
+          <div className="space-y-1.5">
+            {studentAcademicAssessments(state, studentId).slice(0, 6).map(a => (
+              <Card key={a.id} className="!p-3">
+                <div className="flex justify-between text-xs font-bold mb-1"><span>{new Date(a.date).toLocaleDateString()}</span><span style={{ color: COLORS.coding }}>{Math.round(avgOf(a.scores))}%</span></div>
+                {a.comment && <div className="text-[11px]" style={{ color: COLORS.textMuted }}>{a.comment}</div>}
+              </Card>
+            ))}
+            {studentAcademicAssessments(state, studentId).length === 0 && <div className="text-xs" style={{ color: COLORS.textFaint }}>No assessments yet.</div>}
+          </div>
+        </div>
+      </div>
+
+      {mode === 'behavior' && <BehaviorAssessmentModal categories={BEHAVIOR_ASSESS_CATEGORIES} onClose={() => setMode(null)} onSubmit={saveBehavior} />}
+      {mode === 'academic' && <AcademicAssessmentModal categories={ACADEMIC_CATEGORIES} onClose={() => setMode(null)} onSubmit={saveAcademic} />}
+    </div>
+  );
+}
+
+function BehaviorAssessmentModal({ categories, onClose, onSubmit }) {
+  const [ratings, setRatings] = useState(Object.fromEntries(categories.map(c => [c, 3])));
+  const [comment, setComment] = useState('');
+  const overall = Math.round(avgOf(ratings) * 20);
+  return (
+    <ModalShell title="Behavior Assessment" onClose={onClose}>
+      <div className="space-y-3">
+        {categories.map(c => <RatingInput key={c} label={c} value={ratings[c]} onChange={v => setRatings(r => ({ ...r, [c]: v }))} color={COLORS.behavior} />)}
+        <div className="text-xs font-bold text-right" style={{ color: COLORS.behavior }}>Overall: {overall}%</div>
+        <Field label="Comment (optional)"><textarea value={comment} onChange={e => setComment(e.target.value)} rows={2} style={{ ...inputStyle, resize: 'none' }} /></Field>
+        <button onClick={() => onSubmit(ratings, comment)} className="w-full font-bold text-sm rounded-lg py-2.5" style={{ background: COLORS.behavior, color: '#0B0F16' }}>Save Assessment</button>
+      </div>
+    </ModalShell>
+  );
+}
+
+function AcademicAssessmentModal({ categories, onClose, onSubmit }) {
+  const [scores, setScores] = useState(Object.fromEntries(categories.map(c => [c, 85])));
+  const [comment, setComment] = useState('');
+  const overall = Math.round(avgOf(scores));
+  return (
+    <ModalShell title="Academic Assessment" onClose={onClose}>
+      <div className="space-y-3">
+        {categories.map(c => (
+          <Field key={c} label={`${c} (%)`}>
+            <input type="number" min={0} max={100} value={scores[c]} onChange={e => setScores(s => ({ ...s, [c]: Number(e.target.value) }))} style={inputStyle} />
+          </Field>
+        ))}
+        <div className="text-xs font-bold text-right" style={{ color: COLORS.coding }}>Overall: {overall}%</div>
+        <Field label="Comment (optional)"><textarea value={comment} onChange={e => setComment(e.target.value)} rows={2} style={{ ...inputStyle, resize: 'none' }} /></Field>
+        <button onClick={() => onSubmit(scores, comment)} className="w-full font-bold text-sm rounded-lg py-2.5" style={{ background: COLORS.coding, color: '#0B0F16' }}>Save Assessment</button>
+      </div>
+    </ModalShell>
+  );
+}
+
+/* ------------------------------------ Challenges ------------------------------------- */
+
+function ChallengesTab({ state, persist, classId, scopedStudents, isAdmin }) {
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [points, setPoints] = useState(20);
+  const [startDate, setStartDate] = useState(new Date().toISOString().slice(0, 10));
+  const [endDate, setEndDate] = useState('');
+
+  function addChallenge() {
+    if (!name.trim()) return;
+    const entry = { id: uid('ch'), name: name.trim(), description, points: Number(points), startDate, endDate, status: 'active', eligibleClasses: classId ? [classId] : [], completedBy: [] };
+    persist(prev => ({ ...prev, challenges: [entry, ...prev.challenges] }));
+    setName(''); setDescription(''); setPoints(20); setEndDate('');
+  }
+  function toggleStatus(id) { persist(prev => ({ ...prev, challenges: prev.challenges.map(c => c.id === id ? { ...c, status: c.status === 'active' ? 'inactive' : 'active' } : c) })); }
+  function removeChallenge(id) { persist(prev => ({ ...prev, challenges: prev.challenges.filter(c => c.id !== id) })); }
+  function completeFor(challenge, studentId) {
+    if (challenge.completedBy.includes(studentId)) return;
+    const behavior = { category: 'Participation', name: `Challenge: ${challenge.name}` };
+    const entry = { id: uid('log'), studentId, behaviorId: 'challenge', category: behavior.category, name: behavior.name, points: challenge.points, comment: '', date: new Date().toISOString() };
+    persist(prev => ({
+      ...prev,
+      behaviorLog: [...prev.behaviorLog, entry],
+      challenges: prev.challenges.map(c => c.id === challenge.id ? { ...c, completedBy: [...c.completedBy, studentId] } : c),
+      notifications: pushNotification(prev, { scope: 'student', targetId: studentId, message: `\u2B50 You completed the "${challenge.name}" challenge and earned ${challenge.points} points!` }),
+    }));
+  }
+
+  const visible = classId ? state.challenges.filter(c => !c.eligibleClasses?.length || c.eligibleClasses.includes(classId)) : state.challenges;
+
+  return (
+    <div className="space-y-5">
+      <Card>
+        <SectionLabel icon={ListChecks} color={COLORS.challenge}>New Challenge</SectionLabel>
+        <div className="space-y-3">
+          <Field label="Name"><input value={name} onChange={e => setName(e.target.value)} placeholder="Best Behavior Week" style={inputStyle} /></Field>
+          <Field label="Description"><input value={description} onChange={e => setDescription(e.target.value)} style={inputStyle} /></Field>
+          <div className="grid grid-cols-3 gap-3">
+            <Field label="Points"><input type="number" value={points} onChange={e => setPoints(e.target.value)} style={inputStyle} /></Field>
+            <Field label="Start"><input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} style={inputStyle} /></Field>
+            <Field label="End"><input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} style={inputStyle} /></Field>
+          </div>
+          <button onClick={addChallenge} className="w-full font-bold text-xs rounded-lg py-2.5" style={{ background: COLORS.challenge, color: '#0B0F16' }}>Create Challenge</button>
+        </div>
+      </Card>
+
+      <div className="space-y-3">
+        {visible.map(c => (
+          <Card key={c.id}>
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <div>
+                <div className="text-sm font-bold flex items-center gap-2">{c.name}
+                  <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full" style={{ background: c.status === 'active' ? `${COLORS.success}22` : `${COLORS.textFaint}22`, color: c.status === 'active' ? COLORS.success : COLORS.textFaint }}>{c.status}</span>
+                </div>
+                <div className="text-[11px]" style={{ color: COLORS.textMuted }}>{c.description}</div>
+                <div className="text-[10px] mt-0.5" style={{ color: COLORS.textFaint }}>{c.startDate} {c.endDate ? `\u2192 ${c.endDate}` : ''} {'\u2022'} +{c.points} pts</div>
+              </div>
+              <div className="flex gap-1.5 shrink-0">
+                <button onClick={() => toggleStatus(c.id)} className="text-[10px] font-bold px-2 py-1 rounded-lg border" style={{ borderColor: COLORS.border, color: COLORS.textMuted }}>{c.status === 'active' ? 'Deactivate' : 'Activate'}</button>
+                <button onClick={() => removeChallenge(c.id)} style={{ color: COLORS.textFaint }}><Trash2 size={14} /></button>
+              </div>
+            </div>
+            {!isAdmin && (
+              <div className="flex flex-wrap gap-1.5 pt-2 border-t" style={{ borderColor: COLORS.border }}>
+                {scopedStudents.map(s => {
+                  const done = c.completedBy.includes(s.id);
+                  return (
+                    <button key={s.id} disabled={done} onClick={() => completeFor(c, s.id)}
+                      className="text-[10px] font-bold px-2 py-1 rounded-lg disabled:opacity-40 flex items-center gap-1"
+                      style={{ background: done ? COLORS.panelSoft : COLORS.panelAlt, color: done ? COLORS.success : COLORS.text }}>
+                      {done && <CheckCircle2 size={10} />} {s.name}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </Card>
+        ))}
+        {visible.length === 0 && <div className="text-xs" style={{ color: COLORS.textFaint }}>No challenges yet.</div>}
+      </div>
+    </div>
+  );
+}
+
 /* ------------------------------- Recognize modal ---------------------------------- */
 
 function RecognizeModal({ state, onClose, onSubmit }) {
@@ -1190,5 +1688,324 @@ function RecognizeModal({ state, onClose, onSubmit }) {
         </button>
       </div>
     </ModalShell>
+  );
+}
+
+/* ============================================================================ */
+/* ------------------------------------ Admin App ------------------------------ */
+/* ============================================================================ */
+
+function AdminApp({ state, persist, email }) {
+  const [tab, setTab] = useState('overview');
+  const tabs = [
+    { id: 'overview', label: 'Overview', icon: LayoutGrid },
+    { id: 'classes', label: 'Classes', icon: Building2 },
+    { id: 'team', label: 'Team', icon: UserPlus },
+    { id: 'competition', label: 'Competition', icon: Trophy },
+    { id: 'challenges', label: 'Challenges', icon: ListChecks },
+    { id: 'settings', label: 'Settings', icon: Settings },
+  ];
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center gap-2">
+        <ShieldCheck size={18} style={{ color: COLORS.challenge }} />
+        <div>
+          <h1 className="text-lg font-black">Admin Dashboard</h1>
+          <p className="text-xs" style={{ color: COLORS.textFaint }}>School-wide behavior, academics &amp; competition.</p>
+        </div>
+      </div>
+      <NavTabs tabs={tabs} active={tab} onChange={setTab} accent={COLORS.challenge} />
+      {tab === 'overview' && <AdminOverviewTab state={state} />}
+      {tab === 'classes' && <AdminClassesTab state={state} persist={persist} email={email} />}
+      {tab === 'team' && <AdminTeamTab state={state} persist={persist} />}
+      {tab === 'competition' && <AdminCompetitionTab state={state} persist={persist} />}
+      {tab === 'challenges' && <ChallengesTab state={state} persist={persist} classId={null} scopedStudents={state.students} isAdmin={true} />}
+      {tab === 'settings' && <AdminSettingsTab state={state} persist={persist} />}
+    </div>
+  );
+}
+
+function AdminOverviewTab({ state }) {
+  const comp = computeCompetition(state, currentMonthKey());
+  const champion = comp.results[0];
+  const avgBehavior = Math.round(comp.results.reduce((s, r) => s + r.behaviorScore, 0) / (comp.results.length || 1));
+  const avgAcademic = Math.round(comp.results.reduce((s, r) => s + r.academicScore, 0) / (comp.results.length || 1));
+  const totalPoints = state.students.reduce((s, st) => s + totalXP(state, st.id), 0);
+  const topStudents = [...state.students].sort((a, b) => totalXP(state, b.id) - totalXP(state, a.id)).slice(0, 5);
+
+  return (
+    <div className="space-y-5">
+      <div className="flex gap-2 flex-wrap">
+        <StatChip icon={Users} label="Students" value={state.students.length} color={COLORS.robotics} />
+        <StatChip icon={Building2} label="Classes" value={state.classes.length} color={COLORS.coding} />
+        <StatChip icon={UserPlus} label="Teachers" value={Object.values(state.teacherAssignments).filter(a => a.classId).length} color={COLORS.behavior} />
+        <StatChip icon={Zap} label="Total Points" value={totalPoints} color={COLORS.xp} />
+        <StatChip icon={Heart} label="Avg Behavior" value={`${avgBehavior}%`} color={COLORS.behavior} />
+        <StatChip icon={GraduationCap} label="Avg Academic" value={`${avgAcademic}%`} color={COLORS.coding} />
+      </div>
+
+      {champion && (
+        <Card style={{ background: `linear-gradient(135deg, ${COLORS.panel}, ${COLORS.panelAlt})`, borderColor: `${COLORS.xp}55` }}>
+          <div className="flex items-center gap-2 text-xs font-bold mb-1" style={{ color: COLORS.xp }}><Trophy size={14} /> Current Monthly Champion ({monthLabel(comp.monthKey)})</div>
+          <div className="text-xl font-black">{champion.className}</div>
+          <div className="text-xs font-mono mt-0.5" style={{ color: COLORS.textMuted }}>Final Score: <b style={{ color: COLORS.xp }}>{champion.finalScore}</b></div>
+        </Card>
+      )}
+
+      <div>
+        <SectionLabel icon={Trophy} color={COLORS.xp}>Top Students (all classes)</SectionLabel>
+        <Card className="space-y-1.5">
+          {topStudents.map((st, i) => (
+            <div key={st.id} className="flex justify-between text-xs font-semibold">
+              <span>{i + 1}. {st.name} <span style={{ color: COLORS.textFaint }}>({className(state, st.classId)})</span></span>
+              <span className="font-mono" style={{ color: COLORS.xp }}>{totalXP(state, st.id)} XP</span>
+            </div>
+          ))}
+        </Card>
+      </div>
+
+      <div>
+        <SectionLabel icon={BarChart3} color={COLORS.robotics}>Top Classes This Month</SectionLabel>
+        <Card className="space-y-2">
+          {comp.results.slice(0, 3).map(r => (
+            <div key={r.classId} className="flex justify-between text-xs font-semibold">
+              <span>#{r.rank} {r.className}</span>
+              <span className="font-mono" style={{ color: COLORS.xp }}>{r.finalScore}</span>
+            </div>
+          ))}
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+function AdminClassesTab({ state, persist, email }) {
+  const [newClassName, setNewClassName] = useState('');
+  const alreadyExpanded = state.students.some(s => s.id.startsWith('demo_'));
+
+  function addClass() {
+    if (!newClassName.trim()) return;
+    persist(prev => ({ ...prev, classes: [...prev.classes, { id: uid('cls'), name: newClassName.trim() }] }));
+    setNewClassName('');
+  }
+  function removeClass(id) {
+    persist(prev => ({ ...prev, classes: prev.classes.filter(c => c.id !== id) }));
+  }
+  function assignStudent(studentId, classId) {
+    persist(prev => ({ ...prev, students: prev.students.map(s => s.id === studentId ? { ...s, classId: classId || null } : s) }));
+  }
+  function loadDemoData() {
+    const demo = buildDemoExpansion(state, email);
+    persist(prev => ({
+      ...prev,
+      students: [...prev.students, ...demo.newStudents],
+      behaviorLog: [...prev.behaviorLog, ...demo.newBehaviorLog],
+      behaviorAssessments: [...prev.behaviorAssessments, ...demo.newBehaviorAssessments],
+      academicAssessments: [...prev.academicAssessments, ...demo.newAcademicAssessments],
+      competitions: [...demo.demoCompetitions, ...prev.competitions.filter(c => !demo.demoCompetitions.some(d => d.monthKey === c.monthKey))],
+    }));
+  }
+
+  return (
+    <div className="space-y-5">
+      {!alreadyExpanded && (
+        <Card style={{ borderColor: `${COLORS.xp}55` }}>
+          <div className="text-sm font-bold mb-1">Populate demo classes</div>
+          <div className="text-xs mb-2" style={{ color: COLORS.textMuted }}>
+            Adds students, assessments and points to classes 6B, 6C, 7A, 7B, 7C (your existing class and students are untouched) plus two closed competition months, so you can see the full competition system working.
+          </div>
+          <button onClick={loadDemoData} className="text-xs font-bold rounded-lg px-3 py-2" style={{ background: COLORS.xp, color: '#0B0F16' }}>Load Demo Data</button>
+        </Card>
+      )}
+
+      <Card>
+        <SectionLabel icon={Plus} color={COLORS.coding}>Add a class</SectionLabel>
+        <div className="flex gap-2">
+          <input value={newClassName} onChange={e => setNewClassName(e.target.value)} placeholder="e.g. 8A" style={inputStyle} />
+          <button onClick={addClass} className="text-xs font-bold rounded-lg px-3 shrink-0" style={{ background: COLORS.coding, color: '#0B0F16' }}>Add</button>
+        </div>
+      </Card>
+
+      <div>
+        <SectionLabel icon={Building2} color={COLORS.robotics}>Classes</SectionLabel>
+        <div className="space-y-2">
+          {state.classes.map(c => (
+            <div key={c.id} className="flex items-center justify-between rounded-xl border px-3.5 py-2.5" style={{ borderColor: COLORS.border, background: COLORS.panel }}>
+              <div className="text-sm font-semibold">{c.name} <span className="text-[11px] font-normal" style={{ color: COLORS.textFaint }}>({studentsInClass(state, c.id).length} students, {classPointsTotal(state, c.id)} pts)</span></div>
+              <button onClick={() => removeClass(c.id)} style={{ color: COLORS.textFaint }}><Trash2 size={14} /></button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <SectionLabel icon={Users} color={COLORS.behavior}>Assign students to classes</SectionLabel>
+        <div className="rounded-2xl border overflow-hidden" style={{ borderColor: COLORS.border }}>
+          {state.students.map(s => (
+            <div key={s.id} className="flex items-center justify-between gap-2 px-4 py-2.5 border-t first:border-t-0" style={{ borderColor: COLORS.border }}>
+              <span className="text-sm font-medium">{s.name}</span>
+              <select value={s.classId || ''} onChange={e => assignStudent(s.id, e.target.value)} className="rounded-lg px-2 py-1.5 text-xs font-semibold outline-none border" style={{ background: COLORS.panelAlt, borderColor: COLORS.border, color: COLORS.text }}>
+                <option value="">Unassigned</option>
+                {state.classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AdminTeamTab({ state, persist }) {
+  const [newEmail, setNewEmail] = useState('');
+  const [newClassId, setNewClassId] = useState(state.classes[0]?.id || '');
+  const entries = Object.entries(state.teacherAssignments);
+
+  function addAssignment() {
+    if (!newEmail.trim()) return;
+    persist(prev => ({ ...prev, teacherAssignments: { ...prev.teacherAssignments, [newEmail.trim().toLowerCase()]: { isAdmin: false, classId: newClassId || null } } }));
+    setNewEmail('');
+  }
+  function updateAssignment(em, patch) {
+    persist(prev => ({ ...prev, teacherAssignments: { ...prev.teacherAssignments, [em]: { ...prev.teacherAssignments[em], ...patch } } }));
+  }
+  function removeAssignment(em) {
+    persist(prev => { const next = { ...prev.teacherAssignments }; delete next[em]; return { ...prev, teacherAssignments: next }; });
+  }
+
+  return (
+    <div className="space-y-5">
+      <Card>
+        <SectionLabel icon={UserPlus} color={COLORS.robotics}>Assign a teacher</SectionLabel>
+        <div className="text-[11px] mb-2" style={{ color: COLORS.textFaint }}>
+          Enter the exact email of a Supabase Auth user (create the login in Supabase first). They'll get this class automatically the next time they sign in.
+        </div>
+        <div className="grid sm:grid-cols-[1fr_140px_auto] gap-2">
+          <input value={newEmail} onChange={e => setNewEmail(e.target.value)} placeholder="teacher@school.com" style={inputStyle} />
+          <select value={newClassId} onChange={e => setNewClassId(e.target.value)} style={inputStyle}>
+            {state.classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          <button onClick={addAssignment} className="text-xs font-bold rounded-lg px-3" style={{ background: COLORS.robotics, color: '#0B0F16' }}>Assign</button>
+        </div>
+      </Card>
+
+      <div>
+        <SectionLabel icon={ShieldCheck} color={COLORS.challenge}>Team</SectionLabel>
+        <div className="space-y-2">
+          {entries.map(([em, a]) => (
+            <div key={em} className="flex items-center gap-2 rounded-xl border px-3.5 py-2.5 flex-wrap" style={{ borderColor: COLORS.border, background: COLORS.panel }}>
+              <div className="flex-1 min-w-[140px] text-sm font-semibold">{em}</div>
+              <select value={a.classId || ''} onChange={e => updateAssignment(em, { classId: e.target.value || null })} className="rounded-lg px-2 py-1.5 text-xs font-semibold outline-none border" style={{ background: COLORS.panelAlt, borderColor: COLORS.border, color: COLORS.text }}>
+                <option value="">No class</option>
+                {state.classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              <label className="flex items-center gap-1.5 text-[11px] font-bold" style={{ color: a.isAdmin ? COLORS.challenge : COLORS.textFaint }}>
+                <input type="checkbox" checked={!!a.isAdmin} onChange={e => updateAssignment(em, { isAdmin: e.target.checked })} /> Admin
+              </label>
+              <button onClick={() => removeAssignment(em)} style={{ color: COLORS.textFaint }}><Trash2 size={14} /></button>
+            </div>
+          ))}
+          {entries.length === 0 && <div className="text-xs" style={{ color: COLORS.textFaint }}>No team members yet.</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AdminCompetitionTab({ state, persist }) {
+  const monthKey = currentMonthKey();
+  const live = computeCompetition(state, monthKey);
+  const history = [...state.competitions].sort((a, b) => b.monthKey.localeCompare(a.monthKey));
+  const [openMonth, setOpenMonth] = useState(null);
+
+  function finalizeMonth() {
+    const snapshot = { ...live, closedAt: new Date().toISOString(), winnerClassId: live.results[0]?.classId };
+    persist(prev => ({
+      ...prev,
+      competitions: [snapshot, ...prev.competitions.filter(c => c.monthKey !== monthKey)],
+      notifications: pushNotification(prev, { scope: 'broadcast', message: `\u{1F3C6} ${snapshot.results[0]?.className} won the ${monthLabel(monthKey)} class challenge!` }),
+    }));
+  }
+
+  return (
+    <div className="space-y-6">
+      <CompetitionBoard title={`\u{1F3C6} Monthly Class Challenge \u2014 ${monthLabel(monthKey)} (live)`} data={live} />
+      <button onClick={finalizeMonth} className="text-xs font-bold rounded-lg px-3 py-2" style={{ background: COLORS.xp, color: '#0B0F16' }}>Finalize &amp; Close {monthLabel(monthKey)}</button>
+
+      <div>
+        <SectionLabel icon={CalendarDays} color={COLORS.robotics}>Competition History</SectionLabel>
+        <div className="space-y-2">
+          {history.map(h => (
+            <div key={h.monthKey}>
+              <button onClick={() => setOpenMonth(openMonth === h.monthKey ? null : h.monthKey)}
+                className="w-full flex items-center justify-between rounded-xl border px-3.5 py-2.5" style={{ borderColor: COLORS.border, background: COLORS.panel }}>
+                <span className="text-sm font-semibold">{monthLabel(h.monthKey)} {'\u2192'} {h.results.find(r => r.classId === h.winnerClassId)?.className} {'\u{1F3C6}'}</span>
+                <ChevronRight size={14} style={{ transform: openMonth === h.monthKey ? 'rotate(90deg)' : 'none', color: COLORS.textFaint }} />
+              </button>
+              {openMonth === h.monthKey && <div className="mt-2"><CompetitionBoard title="" data={h} compact /></div>}
+            </div>
+          ))}
+          {history.length === 0 && <div className="text-xs" style={{ color: COLORS.textFaint }}>No finalized months yet.</div>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CompetitionBoard({ title, data, compact }) {
+  const medal = ['\u{1F947}', '\u{1F948}', '\u{1F949}'];
+  const champion = data.results[0];
+  return (
+    <div className="space-y-3">
+      {title && <SectionLabel icon={Trophy} color={COLORS.xp}>{title}</SectionLabel>}
+      {champion && !compact && (
+        <Card style={{ background: `linear-gradient(135deg, ${COLORS.panel}, ${COLORS.panelAlt})`, borderColor: `${COLORS.xp}55` }}>
+          <div className="text-[11px] font-bold uppercase mb-1" style={{ color: COLORS.xp }}>{'\u{1F3C6}'} Class Champion</div>
+          <div className="text-2xl font-black">{champion.className}</div>
+          <div className="text-xs font-mono mt-1" style={{ color: COLORS.textMuted }}>Final Score: <b style={{ color: COLORS.xp }}>{champion.finalScore}</b> {'\u2022'} {champion.studentCount} students</div>
+          <button onClick={() => window.print()} className="mt-3 text-[11px] font-bold rounded-lg px-3 py-1.5 flex items-center gap-1.5 w-fit" style={{ background: COLORS.xp, color: '#0B0F16' }}>
+            <Printer size={12} /> Print / Download Certificate
+          </button>
+        </Card>
+      )}
+      <div className="rounded-2xl border overflow-hidden" style={{ borderColor: COLORS.border }}>
+        <div className="grid grid-cols-[auto_1fr_auto_auto_auto_auto] gap-2 px-3 py-2 text-[9.5px] font-bold uppercase" style={{ background: COLORS.panelAlt, color: COLORS.textFaint }}>
+          <div>#</div><div>Class</div><div className="text-right">Points</div><div className="text-right">Behavior</div><div className="text-right">Academic</div><div className="text-right">Final</div>
+        </div>
+        {data.results.map(r => (
+          <div key={r.classId} className="grid grid-cols-[auto_1fr_auto_auto_auto_auto] gap-2 px-3 py-2 text-xs border-t items-center" style={{ borderColor: COLORS.border }}>
+            <div>{medal[r.rank - 1] || r.rank}</div>
+            <div className="font-semibold">{r.className}</div>
+            <div className="text-right font-mono">{r.pointsScore}</div>
+            <div className="text-right font-mono">{r.behaviorScore}%</div>
+            <div className="text-right font-mono">{r.academicScore}%</div>
+            <div className="text-right font-mono font-bold" style={{ color: COLORS.xp }}>{r.finalScore}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AdminSettingsTab({ state, persist }) {
+  const w = state.competitionConfig.weights;
+  function update(field, val) {
+    persist(prev => ({ ...prev, competitionConfig: { ...prev.competitionConfig, weights: { ...prev.competitionConfig.weights, [field]: Number(val) } } }));
+  }
+  const sum = Number(w.points) + Number(w.behavior) + Number(w.academic);
+  return (
+    <div className="space-y-5">
+      <Card>
+        <SectionLabel icon={Percent} color={COLORS.challenge}>Competition Formula Weights</SectionLabel>
+        <div className="space-y-3">
+          <Field label={`Student Points \u2014 ${w.points}%`}><input type="range" min={0} max={100} value={w.points} onChange={e => update('points', e.target.value)} className="w-full" /></Field>
+          <Field label={`Behavior Performance \u2014 ${w.behavior}%`}><input type="range" min={0} max={100} value={w.behavior} onChange={e => update('behavior', e.target.value)} className="w-full" /></Field>
+          <Field label={`Academic Performance \u2014 ${w.academic}%`}><input type="range" min={0} max={100} value={w.academic} onChange={e => update('academic', e.target.value)} className="w-full" /></Field>
+          <div className="text-[11px] font-semibold" style={{ color: sum === 100 ? COLORS.success : COLORS.reward }}>
+            {sum === 100 ? 'Weights total 100%.' : `Weights total ${sum}% \u2014 scores are auto-normalized, but 100% is recommended for clarity.`}
+          </div>
+        </div>
+      </Card>
+    </div>
   );
 }
