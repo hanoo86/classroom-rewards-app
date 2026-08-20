@@ -1233,7 +1233,7 @@ function TeacherApp({ state, persist, classId, email, setToast }) {
           {classId && <ClassCompetitionChip state={state} classId={classId} />}
         </div>
         <div className="md:hidden"><NavTabs tabs={tabs} active={tab} onChange={setTab} accent={COLORS.robotics} /></div>
-        {tab === 'overview' && <OverviewTab state={scoped} persist={persist} />}
+        {tab === 'overview' && <OverviewTab state={scoped} persist={persist} classId={classId} />}
         {tab === 'assessments' && <AssessmentsTab state={scoped} persist={persist} classId={classId} email={email} setToast={setToast} />}
         {tab === 'challenges' && <ChallengesTab state={state} persist={persist} classId={classId} scopedStudents={scoped.students} isAdmin={!classId} />}
         {tab === 'missions' && <MissionsTab state={scoped} persist={persist} />}
@@ -1258,9 +1258,10 @@ function ClassCompetitionChip({ state, classId }) {
   );
 }
 
-function OverviewTab({ state, persist }) {
+function OverviewTab({ state, persist, classId }) {
   const [expanded, setExpanded] = useState(null);
   const [noteDraft, setNoteDraft] = useState('');
+  const [newStudentName, setNewStudentName] = useState('');
   const roster = [...state.students].sort((a, b) => totalXP(state, b.id) - totalXP(state, a.id));
   const mostImproved = computeMostImproved(state);
   const needsEncouragement = computeNeedsEncouragement(state);
@@ -1270,6 +1271,11 @@ function OverviewTab({ state, persist }) {
 
   function addAcademic(id, delta) { persist(prev => ({ ...prev, academicPoints: { ...prev.academicPoints, [id]: (prev.academicPoints[id] || 0) + delta } })); }
   function addNote(id, text) { persist(prev => ({ ...prev, notes: [{ id: uid('note'), studentId: id, text, date: new Date().toISOString() }, ...prev.notes] })); }
+  function addStudent() {
+    if (!newStudentName.trim()) return;
+    persist(prev => ({ ...prev, students: [...prev.students, { id: uid('stu'), name: newStudentName.trim(), ageGroup: 'middle', classId: classId || null }] }));
+    setNewStudentName('');
+  }
 
   return (
     <div className="space-y-5">
@@ -1279,6 +1285,16 @@ function OverviewTab({ state, persist }) {
         <StatChip icon={Flame} label="Active Streaks" value={activeStreaks} color={COLORS.reward} />
         <StatChip icon={Users} label="Class Size" value={state.students.length} color={COLORS.robotics} />
       </div>
+
+      {classId && (
+        <Card>
+          <SectionLabel icon={UserPlus} color={COLORS.behavior}>Add a student to this class</SectionLabel>
+          <div className="flex gap-2">
+            <input value={newStudentName} onChange={e => setNewStudentName(e.target.value)} placeholder="Student name" style={inputStyle} />
+            <button onClick={addStudent} className="text-xs font-bold rounded-lg px-3 shrink-0" style={{ background: COLORS.behavior, color: COLORS.onAccent }}>Add</button>
+          </div>
+        </Card>
+      )}
 
       <div className="grid sm:grid-cols-2 gap-3">
         {mostImproved && (
@@ -1854,6 +1870,9 @@ function AdminOverviewTab({ state }) {
 
 function AdminClassesTab({ state, persist, email }) {
   const [newClassName, setNewClassName] = useState('');
+  const [newStudentName, setNewStudentName] = useState('');
+  const [newStudentClassId, setNewStudentClassId] = useState(state.classes[0]?.id || '');
+  const [newStudentAge, setNewStudentAge] = useState('middle');
   const alreadyExpanded = state.students.some(s => s.id.startsWith('demo_'));
 
   function addClass() {
@@ -1863,6 +1882,14 @@ function AdminClassesTab({ state, persist, email }) {
   }
   function removeClass(id) {
     persist(prev => ({ ...prev, classes: prev.classes.filter(c => c.id !== id) }));
+  }
+  function addStudent() {
+    if (!newStudentName.trim()) return;
+    persist(prev => ({ ...prev, students: [...prev.students, { id: uid('stu'), name: newStudentName.trim(), ageGroup: newStudentAge, classId: newStudentClassId || null }] }));
+    setNewStudentName('');
+  }
+  function removeStudent(id) {
+    persist(prev => ({ ...prev, students: prev.students.filter(s => s.id !== id) }));
   }
   function assignStudent(studentId, classId) {
     persist(prev => ({ ...prev, students: prev.students.map(s => s.id === studentId ? { ...s, classId: classId || null } : s) }));
@@ -1899,6 +1926,23 @@ function AdminClassesTab({ state, persist, email }) {
         </div>
       </Card>
 
+      <Card>
+        <SectionLabel icon={UserPlus} color={COLORS.behavior}>Add a student</SectionLabel>
+        <div className="grid sm:grid-cols-[1fr_120px_120px_auto] gap-2">
+          <input value={newStudentName} onChange={e => setNewStudentName(e.target.value)} placeholder="Student name" style={inputStyle} />
+          <select value={newStudentAge} onChange={e => setNewStudentAge(e.target.value)} style={inputStyle}>
+            <option value="primary">Primary</option>
+            <option value="middle">Middle</option>
+            <option value="high">High</option>
+          </select>
+          <select value={newStudentClassId} onChange={e => setNewStudentClassId(e.target.value)} style={inputStyle}>
+            <option value="">Unassigned</option>
+            {state.classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          <button onClick={addStudent} className="text-xs font-bold rounded-lg px-3 shrink-0" style={{ background: COLORS.behavior, color: COLORS.onAccent }}>Add</button>
+        </div>
+      </Card>
+
       <div>
         <SectionLabel icon={Building2} color={COLORS.robotics}>Classes</SectionLabel>
         <div className="space-y-2">
@@ -1912,15 +1956,18 @@ function AdminClassesTab({ state, persist, email }) {
       </div>
 
       <div>
-        <SectionLabel icon={Users} color={COLORS.behavior}>Assign students to classes</SectionLabel>
+        <SectionLabel icon={Users} color={COLORS.behavior}>All students</SectionLabel>
         <div className="rounded-2xl border overflow-hidden" style={{ borderColor: COLORS.border }}>
           {state.students.map(s => (
             <div key={s.id} className="flex items-center justify-between gap-2 px-4 py-2.5 border-t first:border-t-0" style={{ borderColor: COLORS.border }}>
               <span className="text-sm font-medium">{s.name}</span>
-              <select value={s.classId || ''} onChange={e => assignStudent(s.id, e.target.value)} className="rounded-lg px-2 py-1.5 text-xs font-semibold outline-none border" style={{ background: COLORS.panelAlt, borderColor: COLORS.border, color: COLORS.text }}>
-                <option value="">Unassigned</option>
-                {state.classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
+              <div className="flex items-center gap-2">
+                <select value={s.classId || ''} onChange={e => assignStudent(s.id, e.target.value)} className="rounded-lg px-2 py-1.5 text-xs font-semibold outline-none border" style={{ background: COLORS.panelAlt, borderColor: COLORS.border, color: COLORS.text }}>
+                  <option value="">Unassigned</option>
+                  {state.classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+                <button onClick={() => removeStudent(s.id)} style={{ color: COLORS.textFaint }}><Trash2 size={14} /></button>
+              </div>
             </div>
           ))}
         </div>
