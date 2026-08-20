@@ -13,11 +13,13 @@ import { supabase } from './supabaseClient';
 /* ---------------------------------- palette --------------------------------- */
 
 const COLORS = {
-  bg: '#0B0F16', panel: '#151C27', panelAlt: '#1B2431', panelSoft: '#101724',
-  border: '#232E3D', borderStrong: '#34445A',
-  text: '#EEF2F6', textMuted: '#93A1B2', textFaint: '#5B6B7E',
-  xp: '#F5B942', behavior: '#FF8A65', robotics: '#4C86F5',
-  coding: '#33C7B0', challenge: '#B07CFF', reward: '#FF6FA8', success: '#5FD489',
+  bg: '#F4F5FB', panel: '#FFFFFF', panelAlt: '#F1EEFE', panelSoft: '#F7F8FC',
+  border: '#E7E8F3', borderStrong: '#D6D8EC',
+  text: '#20223B', textMuted: '#686D8C', textFaint: '#9498B3',
+  xp: '#7C5CFC', behavior: '#22C55E', robotics: '#3B82F6',
+  coding: '#6366F1', challenge: '#F97316', reward: '#F59E0B', success: '#22C55E',
+  onAccent: '#FFFFFF',
+  sidebarBg: '#1E1B3A', sidebarText: '#B7B4D6', sidebarActive: '#7C5CFC',
 };
 
 /* ---------------------------------- data ------------------------------------ */
@@ -450,7 +452,7 @@ function buildDemoExpansion(state, teacherEmail) {
 
 function Card({ children, style, className = '' }) {
   return (
-    <div className={`rounded-2xl border p-4 ${className}`} style={{ background: COLORS.panel, borderColor: COLORS.border, ...style }}>
+    <div className={`rounded-2xl border p-4 shadow-sm ${className}`} style={{ background: COLORS.panel, borderColor: COLORS.border, boxShadow: '0 1px 3px rgba(32,34,59,0.05)', ...style }}>
       {children}
     </div>
   );
@@ -475,14 +477,17 @@ function SectionLabel({ icon: Icon, color, children, right }) {
   );
 }
 
-function StatChip({ icon: Icon, label, value, color }) {
+function StatChip({ icon: Icon, label, value, color, caption }) {
   return (
-    <div className="flex-1 rounded-xl border px-3 py-2.5" style={{ minWidth: 84, background: COLORS.panelAlt, borderColor: COLORS.border }}>
-      <div className="flex items-center gap-1.5 mb-1" style={{ color }}>
-        <Icon size={13} />
-        <span className="text-[9.5px] font-bold uppercase tracking-wide" style={{ color: COLORS.textFaint }}>{label}</span>
+    <div className="flex-1 rounded-2xl border px-3.5 py-3 flex items-center gap-3 shadow-sm" style={{ minWidth: 140, background: COLORS.panel, borderColor: COLORS.border }}>
+      <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: `${color}1A` }}>
+        <Icon size={18} style={{ color }} strokeWidth={2.3} />
       </div>
-      <div className="text-lg font-black font-mono" style={{ color: COLORS.text }}>{value}</div>
+      <div className="min-w-0">
+        <div className="text-[10px] font-bold uppercase tracking-wide truncate" style={{ color: COLORS.textFaint }}>{label}</div>
+        <div className="text-lg font-black leading-tight" style={{ color: COLORS.text }}>{value}</div>
+        {caption && <div className="text-[9.5px] font-semibold" style={{ color }}>{caption}</div>}
+      </div>
     </div>
   );
 }
@@ -498,7 +503,7 @@ function JourneyPath({ level }) {
               <div className="w-8 h-8 rounded-full flex items-center justify-center text-[11px] font-black shrink-0"
                 style={{
                   background: st === 'future' ? COLORS.panelAlt : `linear-gradient(135deg, ${COLORS.xp}, #FFDA8A)`,
-                  color: st === 'future' ? COLORS.textFaint : '#0B0F16',
+                  color: st === 'future' ? COLORS.textFaint : COLORS.onAccent,
                   boxShadow: st === 'current' ? `0 0 0 3px ${COLORS.xp}40` : 'none',
                 }}>
                 {l.level}
@@ -524,7 +529,7 @@ function BadgeTile({ def, earned, progressText }) {
       style={{ background: earned ? `${COLORS.xp}14` : COLORS.panelAlt, borderColor: earned ? `${COLORS.xp}55` : COLORS.border }}>
       {!earned && <Lock size={11} className="absolute top-2 right-2" style={{ color: COLORS.textFaint }} />}
       <div className="w-10 h-10 rounded-full flex items-center justify-center" style={{ background: earned ? COLORS.xp : COLORS.panelSoft }}>
-        <Icon size={18} style={{ color: earned ? '#0B0F16' : COLORS.textFaint }} strokeWidth={2.2} />
+        <Icon size={18} style={{ color: earned ? COLORS.onAccent : COLORS.textFaint }} strokeWidth={2.2} />
       </div>
       <div className="text-[10.5px] font-bold leading-tight" style={{ color: earned ? COLORS.text : COLORS.textMuted }}>{def.name}</div>
       <div className="text-[9px] leading-tight" style={{ color: COLORS.textFaint }}>{earned ? 'Unlocked' : progressText}</div>
@@ -555,11 +560,33 @@ function NavTabs({ tabs, active, onChange, accent }) {
       {tabs.map(t => (
         <button key={t.id} onClick={() => onChange(t.id)}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition"
-          style={active === t.id ? { background: accent, color: '#0B0F16' } : { color: COLORS.textMuted }}>
+          style={active === t.id ? { background: accent, color: COLORS.onAccent } : { color: COLORS.textMuted }}>
           <t.icon size={13} /> {t.label}
         </button>
       ))}
     </div>
+  );
+}
+
+function Sidebar({ tabs, active, onChange, dark, header, footer }) {
+  const bg = dark ? COLORS.sidebarBg : COLORS.panel;
+  const textCol = dark ? COLORS.sidebarText : COLORS.textMuted;
+  const activeBg = dark ? COLORS.sidebarActive : `${COLORS.xp}18`;
+  const activeText = dark ? COLORS.onAccent : COLORS.xp;
+  return (
+    <aside className="hidden md:flex md:flex-col md:w-60 shrink-0 rounded-2xl border shadow-sm overflow-hidden self-start" style={{ background: bg, borderColor: dark ? bg : COLORS.border }}>
+      {header && <div className="px-4 pt-4 pb-3">{header}</div>}
+      <nav className="px-2.5 pb-3 space-y-0.5 flex-1">
+        {tabs.map(t => (
+          <button key={t.id} onClick={() => onChange(t.id)}
+            className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[13px] font-semibold transition text-left"
+            style={active === t.id ? { background: activeBg, color: activeText } : { color: textCol }}>
+            <t.icon size={16} /> {t.label}
+          </button>
+        ))}
+      </nav>
+      {footer && <div className="px-3 pb-3">{footer}</div>}
+    </aside>
   );
 }
 
@@ -590,12 +617,10 @@ function RatingInput({ label, value, onChange, color }) {
   return (
     <div className="flex items-center justify-between gap-2">
       <span className="text-[11.5px] font-semibold" style={{ color: COLORS.text }}>{label}</span>
-      <div className="flex gap-1">
+      <div className="flex gap-0.5">
         {[1, 2, 3, 4, 5].map(n => (
-          <button key={n} type="button" onClick={() => onChange(n)}
-            className="w-6 h-6 rounded-md text-[10px] font-bold flex items-center justify-center border"
-            style={n <= value ? { background: color, borderColor: color, color: '#0B0F16' } : { background: 'transparent', borderColor: COLORS.border, color: COLORS.textFaint }}>
-            {n}
+          <button key={n} type="button" onClick={() => onChange(n)} className="p-0.5">
+            <Star size={17} fill={n <= value ? color : 'none'} style={{ color: n <= value ? color : COLORS.border }} strokeWidth={1.8} />
           </button>
         ))}
       </div>
@@ -627,7 +652,7 @@ function TeacherLoginModal({ onClose, onSuccess }) {
         <Field label="Password"><input type="password" value={password} onChange={e => setPassword(e.target.value)} style={inputStyle} /></Field>
         {error && <div className="text-xs font-semibold" style={{ color: '#FF6B6B' }}>{error}</div>}
         <button onClick={handleLogin} disabled={loading} className="w-full font-bold text-sm rounded-lg py-2.5 flex items-center justify-center gap-2 disabled:opacity-50"
-          style={{ background: COLORS.robotics, color: '#0B0F16' }}>
+          style={{ background: COLORS.robotics, color: COLORS.onAccent }}>
           <LogIn size={15} /> {loading ? 'Signing in\u2026' : 'Sign In'}
         </button>
         <p className="text-[10.5px] text-center" style={{ color: COLORS.textFaint }}>
@@ -717,10 +742,10 @@ export default function App() {
     <div className="min-h-screen" style={{ background: COLORS.bg, color: COLORS.text, fontFamily: 'ui-sans-serif, system-ui, -apple-system, sans-serif' }}>
       <Toast toast={toast} />
       <header className="sticky top-0 z-40 border-b" style={{ background: `${COLORS.bg}F2`, borderColor: COLORS.border, backdropFilter: 'blur(6px)' }}>
-        <div className="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
+        <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: `linear-gradient(135deg, ${COLORS.robotics}, ${COLORS.coding})` }}>
-              <Zap size={16} style={{ color: '#0B0F16' }} strokeWidth={2.5} />
+              <Zap size={16} style={{ color: COLORS.onAccent }} strokeWidth={2.5} />
             </div>
             <div>
               <div className="text-[14.5px] font-black tracking-tight leading-none">CS &amp; Robotics Lab</div>
@@ -730,12 +755,12 @@ export default function App() {
           <div className="flex items-center gap-2">
             <div className="flex items-center gap-1 rounded-lg p-1 border" style={{ background: COLORS.panelAlt, borderColor: COLORS.border }}>
               <button onClick={() => handleRoleClick('student')} className="px-3 py-1.5 rounded-md text-xs font-bold transition"
-                style={role === 'student' ? { background: COLORS.xp, color: '#0B0F16' } : { color: COLORS.textMuted }}>Student</button>
+                style={role === 'student' ? { background: COLORS.xp, color: COLORS.onAccent } : { color: COLORS.textMuted }}>Student</button>
               <button onClick={() => handleRoleClick('teacher')} className="px-3 py-1.5 rounded-md text-xs font-bold transition"
-                style={role === 'teacher' ? { background: COLORS.robotics, color: '#0B0F16' } : { color: COLORS.textMuted }}>Teacher</button>
+                style={role === 'teacher' ? { background: COLORS.robotics, color: COLORS.onAccent } : { color: COLORS.textMuted }}>Teacher</button>
               {session && isAdmin && (
                 <button onClick={() => handleRoleClick('admin')} className="px-3 py-1.5 rounded-md text-xs font-bold transition"
-                  style={role === 'admin' ? { background: COLORS.challenge, color: '#0B0F16' } : { color: COLORS.textMuted }}>Admin</button>
+                  style={role === 'admin' ? { background: COLORS.challenge, color: COLORS.onAccent } : { color: COLORS.textMuted }}>Admin</button>
               )}
             </div>
             {(role === 'teacher' || role === 'admin') && session && (
@@ -747,7 +772,7 @@ export default function App() {
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-4 py-5">
+      <main className="max-w-7xl mx-auto px-4 py-5">
         {role === 'student' && (
           <StudentApp state={state} activeStudentId={activeStudentId} setActiveStudentId={setActiveStudentId} persist={persist} setToast={setToast} />
         )}
@@ -776,7 +801,7 @@ export default function App() {
       {(role === 'teacher' || role === 'admin') && session && (
         <button onClick={() => setShowRecognize(true)}
           className="fixed bottom-5 right-5 z-30 rounded-full shadow-2xl flex items-center gap-2 px-4 py-3 font-bold text-xs"
-          style={{ background: COLORS.xp, color: '#0B0F16' }}>
+          style={{ background: COLORS.xp, color: COLORS.onAccent }}>
           <Plus size={16} /> Quick Recognition
         </button>
       )}
@@ -799,8 +824,9 @@ function StudentApp({ state, activeStudentId, setActiveStudentId, persist, setTo
   const tabs = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutGrid },
     { id: 'achievements', label: 'Achievements', icon: Trophy },
-    { id: 'store', label: 'Store', icon: Gift },
+    { id: 'store', label: 'Reward Store', icon: Gift },
     { id: 'leaderboard', label: 'Leaderboard', icon: BarChart3 },
+    { id: 'competition', label: 'Class Competition', icon: Medal },
     { id: 'notifications', label: unread ? `Alerts (${unread})` : 'Alerts', icon: Bell },
   ];
 
@@ -818,43 +844,65 @@ function StudentApp({ state, activeStudentId, setActiveStudentId, persist, setTo
     setToast({ kind: 'reward', title: '\u{1F381} Reward redeemed!', body: reward.name });
   }
 
+  const sidebarHeader = (
+    <div className="flex items-center gap-2.5">
+      <div className="w-10 h-10 rounded-full flex items-center justify-center font-black text-sm shrink-0" style={{ background: `linear-gradient(135deg, ${COLORS.xp}, ${COLORS.robotics})`, color: COLORS.onAccent }}>
+        {student.name.charAt(0)}
+      </div>
+      <div className="min-w-0">
+        <div className="text-sm font-bold truncate" style={{ color: COLORS.text }}>{student.name}</div>
+        <div className="text-[10.5px] font-semibold flex items-center gap-1" style={{ color: COLORS.textFaint }}>
+          {student.classId ? className(state, student.classId) : student.ageGroup}
+          <span className="w-1.5 h-1.5 rounded-full" style={{ background: COLORS.success }} />
+        </div>
+      </div>
+    </div>
+  );
+
   return (
-    <div className="space-y-5">
-      <div className="flex items-center gap-2">
-        <UserCircle2 size={17} style={{ color: COLORS.textMuted }} />
-        <select value={student.id} onChange={e => setActiveStudentId(e.target.value)}
-          className="rounded-lg px-2.5 py-1.5 text-sm font-semibold outline-none border"
-          style={{ background: COLORS.panelAlt, borderColor: COLORS.border, color: COLORS.text }}>
-          {state.students.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-        </select>
-        <span className="text-[10px] font-bold uppercase px-2 py-1 rounded-full" style={{ background: COLORS.panelAlt, color: COLORS.textFaint }}>
-          {student.ageGroup} view
-        </span>
-        {student.classId && (
-          <span className="text-[10px] font-bold uppercase px-2 py-1 rounded-full flex items-center gap-1" style={{ background: `${COLORS.robotics}22`, color: COLORS.robotics }}>
-            <Building2 size={10} /> {className(state, student.classId)}
+    <div className="md:flex md:gap-5 items-start">
+      <Sidebar tabs={tabs} active={tab} onChange={setTab} header={sidebarHeader} />
+      <div className="flex-1 min-w-0 space-y-5">
+        <div className="flex items-center gap-2 flex-wrap">
+          <UserCircle2 size={17} style={{ color: COLORS.textMuted }} />
+          <select value={student.id} onChange={e => setActiveStudentId(e.target.value)}
+            className="rounded-lg px-2.5 py-1.5 text-sm font-semibold outline-none border"
+            style={{ background: COLORS.panelAlt, borderColor: COLORS.border, color: COLORS.text }}>
+            {state.students.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+          <span className="text-[10px] font-bold uppercase px-2 py-1 rounded-full" style={{ background: COLORS.panelAlt, color: COLORS.textFaint }}>
+            {student.ageGroup} view
           </span>
+          {student.classId && (
+            <span className="text-[10px] font-bold uppercase px-2 py-1 rounded-full flex items-center gap-1" style={{ background: `${COLORS.robotics}18`, color: COLORS.robotics }}>
+              <Building2 size={10} /> {className(state, student.classId)}
+            </span>
+          )}
+          <div className="md:hidden ml-auto"><NavTabs tabs={tabs} active={tab} onChange={setTab} accent={COLORS.xp} /></div>
+        </div>
+
+        {tab === 'dashboard' && <DashboardTab state={state} student={student} theme={theme} lvl={lvl} xp={xp} onReflect={addReflection} />}
+        {tab === 'achievements' && <AchievementsTab state={state} student={student} />}
+        {tab === 'store' && <StoreTab state={state} student={student} onRedeem={redeem} />}
+        {tab === 'leaderboard' && <LeaderboardTab state={state} />}
+        {tab === 'competition' && (
+          student.classId
+            ? <CompetitionBoard title={`\u{1F3C6} Monthly Class Challenge \u2014 ${monthLabel(currentMonthKey())}`} data={computeCompetition(state, currentMonthKey())} />
+            : <div className="text-xs" style={{ color: COLORS.textFaint }}>Not assigned to a class yet.</div>
+        )}
+        {tab === 'notifications' && (
+          <div className="space-y-2">
+            <SectionLabel icon={Bell} color={COLORS.xp}>Notifications</SectionLabel>
+            {myNotifs.length === 0 && <div className="text-xs" style={{ color: COLORS.textFaint }}>No notifications yet.</div>}
+            {myNotifs.slice(0, 30).map(n => (
+              <div key={n.id} className="text-xs rounded-lg px-3 py-2.5" style={{ background: COLORS.panelAlt, color: COLORS.text }}>
+                <div>{n.message}</div>
+                <div className="text-[10px] mt-0.5" style={{ color: COLORS.textFaint }}>{new Date(n.date).toLocaleString()}</div>
+              </div>
+            ))}
+          </div>
         )}
       </div>
-
-      <NavTabs tabs={tabs} active={tab} onChange={setTab} accent={COLORS.xp} />
-
-      {tab === 'dashboard' && <DashboardTab state={state} student={student} theme={theme} lvl={lvl} xp={xp} onReflect={addReflection} />}
-      {tab === 'achievements' && <AchievementsTab state={state} student={student} />}
-      {tab === 'store' && <StoreTab state={state} student={student} onRedeem={redeem} />}
-      {tab === 'leaderboard' && <LeaderboardTab state={state} />}
-      {tab === 'notifications' && (
-        <div className="space-y-2">
-          <SectionLabel icon={Bell} color={COLORS.xp}>Notifications</SectionLabel>
-          {myNotifs.length === 0 && <div className="text-xs" style={{ color: COLORS.textFaint }}>No notifications yet.</div>}
-          {myNotifs.slice(0, 30).map(n => (
-            <div key={n.id} className="text-xs rounded-lg px-3 py-2.5" style={{ background: COLORS.panelAlt, color: COLORS.text }}>
-              <div>{n.message}</div>
-              <div className="text-[10px] mt-0.5" style={{ color: COLORS.textFaint }}>{new Date(n.date).toLocaleString()}</div>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }
@@ -1011,7 +1059,7 @@ function DashboardTab({ state, student, theme, lvl, xp, onReflect }) {
           style={{ background: COLORS.panelSoft, borderColor: COLORS.border, color: COLORS.text }} />
         <button disabled={!feeling} onClick={() => { onReflect(feeling, improvement); setFeeling(null); setImprovement(''); }}
           className="w-full font-bold text-xs rounded-lg py-2.5 transition disabled:opacity-30"
-          style={{ background: COLORS.behavior, color: '#0B0F16' }}>Save Reflection</button>
+          style={{ background: COLORS.behavior, color: COLORS.onAccent }}>Save Reflection</button>
         {reflections.length > 0 && (
           <div className="mt-3 pt-3 border-t space-y-1" style={{ borderColor: COLORS.border }}>
             {reflections.map(r => <div key={r.id} className="text-[10.5px]" style={{ color: COLORS.textMuted }}>{new Date(r.date).toLocaleDateString()} {'\u2014'} {r.improvement || '(no note)'}</div>)}
@@ -1070,7 +1118,7 @@ function StoreTab({ state, student, onRedeem }) {
                 <span className="font-mono font-bold text-sm" style={{ color: COLORS.xp }}>{r.cost} XP</span>
                 <button disabled={!affordable} onClick={() => onRedeem(r)}
                   className="text-xs font-bold px-3 py-1.5 rounded-lg disabled:opacity-30 transition"
-                  style={{ background: affordable ? COLORS.reward : COLORS.panelSoft, color: affordable ? '#0B0F16' : COLORS.textFaint }}>
+                  style={{ background: affordable ? COLORS.reward : COLORS.panelSoft, color: affordable ? COLORS.onAccent : COLORS.textFaint }}>
                   {affordable ? 'Redeem' : 'Locked'}
                 </button>
               </div>
@@ -1163,23 +1211,36 @@ function TeacherApp({ state, persist, classId, email, setToast }) {
     { id: 'analytics', label: 'Analytics', icon: BarChart3 },
   ];
 
-  return (
-    <div className="space-y-5">
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <div>
-          <h1 className="text-lg font-black">Teacher Console {classId ? `\u2014 ${className(state, classId)}` : ''}</h1>
-          <p className="text-xs" style={{ color: COLORS.textFaint }}>{'Reward \u2192 recognize \u2192 encourage \u2192 improve.'}</p>
-        </div>
-        {classId && <ClassCompetitionChip state={state} classId={classId} />}
+  const sidebarHeader = (
+    <div>
+      <div className="text-[11px] font-black uppercase tracking-wide flex items-center gap-1.5" style={{ color: COLORS.sidebarActive }}>
+        <ShieldCheck size={13} /> Teacher Console
       </div>
-      <NavTabs tabs={tabs} active={tab} onChange={setTab} accent={COLORS.robotics} />
-      {tab === 'overview' && <OverviewTab state={scoped} persist={persist} />}
-      {tab === 'assessments' && <AssessmentsTab state={scoped} persist={persist} classId={classId} email={email} setToast={setToast} />}
-      {tab === 'challenges' && <ChallengesTab state={state} persist={persist} classId={classId} scopedStudents={scoped.students} isAdmin={!classId} />}
-      {tab === 'missions' && <MissionsTab state={scoped} persist={persist} />}
-      {tab === 'badges' && <BadgesTab state={scoped} />}
-      {tab === 'store' && <StoreManageTab state={scoped} persist={persist} />}
-      {tab === 'analytics' && <AnalyticsTab state={scoped} />}
+      <div className="text-sm font-bold mt-1" style={{ color: COLORS.onAccent }}>{classId ? className(state, classId) : 'All Classes'}</div>
+      <div className="text-[10.5px] mt-0.5" style={{ color: COLORS.sidebarText }}>{scoped.students.length} Students</div>
+    </div>
+  );
+
+  return (
+    <div className="md:flex md:gap-5 items-start">
+      <Sidebar tabs={tabs} active={tab} onChange={setTab} dark header={sidebarHeader} />
+      <div className="flex-1 min-w-0 space-y-5">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div>
+            <h1 className="text-lg font-black">Teacher Console {classId ? `\u2014 ${className(state, classId)}` : ''}</h1>
+            <p className="text-xs" style={{ color: COLORS.textFaint }}>{'Reward \u2192 recognize \u2192 encourage \u2192 improve.'}</p>
+          </div>
+          {classId && <ClassCompetitionChip state={state} classId={classId} />}
+        </div>
+        <div className="md:hidden"><NavTabs tabs={tabs} active={tab} onChange={setTab} accent={COLORS.robotics} /></div>
+        {tab === 'overview' && <OverviewTab state={scoped} persist={persist} />}
+        {tab === 'assessments' && <AssessmentsTab state={scoped} persist={persist} classId={classId} email={email} setToast={setToast} />}
+        {tab === 'challenges' && <ChallengesTab state={state} persist={persist} classId={classId} scopedStudents={scoped.students} isAdmin={!classId} />}
+        {tab === 'missions' && <MissionsTab state={scoped} persist={persist} />}
+        {tab === 'badges' && <BadgesTab state={scoped} />}
+        {tab === 'store' && <StoreManageTab state={scoped} persist={persist} />}
+        {tab === 'analytics' && <AnalyticsTab state={scoped} />}
+      </div>
     </div>
   );
 }
@@ -1320,7 +1381,7 @@ function MissionsTab({ state, persist }) {
             <Field label="Behavior points"><input type="number" value={behaviorPoints} onChange={e => setBehaviorPoints(e.target.value)} style={inputStyle} /></Field>
           </div>
           <Field label="Badge progress hint"><input value={badgeHint} onChange={e => setBadgeHint(e.target.value)} style={inputStyle} /></Field>
-          <button onClick={saveMission} className="w-full font-bold text-xs rounded-lg py-2.5" style={{ background: COLORS.challenge, color: '#0B0F16' }}>Save Mission</button>
+          <button onClick={saveMission} className="w-full font-bold text-xs rounded-lg py-2.5" style={{ background: COLORS.challenge, color: COLORS.onAccent }}>Save Mission</button>
         </div>
       </Card>
 
@@ -1333,7 +1394,7 @@ function MissionsTab({ state, persist }) {
               <div key={st.id} className="flex items-center justify-between rounded-xl border px-3.5 py-2.5" style={{ borderColor: COLORS.border, background: COLORS.panel }}>
                 <span className="text-sm font-medium">{st.name}</span>
                 <button onClick={() => markComplete(st.id)} disabled={done} className="text-xs font-bold px-3 py-1.5 rounded-lg disabled:opacity-40 flex items-center gap-1"
-                  style={{ background: done ? COLORS.panelSoft : COLORS.success, color: done ? COLORS.success : '#0B0F16' }}>
+                  style={{ background: done ? COLORS.panelSoft : COLORS.success, color: done ? COLORS.success : COLORS.onAccent }}>
                   <CheckCircle2 size={13} /> {done ? 'Completed' : 'Mark done'}
                 </button>
               </div>
@@ -1394,7 +1455,7 @@ function StoreManageTab({ state, persist }) {
             <Field label="Description"><input value={description} onChange={e => setDescription(e.target.value)} style={inputStyle} /></Field>
             <Field label="XP cost"><input type="number" value={cost} onChange={e => setCost(e.target.value)} style={inputStyle} /></Field>
           </div>
-          <button onClick={addReward} className="w-full font-bold text-xs rounded-lg py-2.5" style={{ background: COLORS.reward, color: '#0B0F16' }}>Add to store</button>
+          <button onClick={addReward} className="w-full font-bold text-xs rounded-lg py-2.5" style={{ background: COLORS.reward, color: COLORS.onAccent }}>Add to store</button>
         </div>
       </Card>
       <div>
@@ -1494,8 +1555,8 @@ function AssessmentsTab({ state, persist, classId, email, setToast }) {
               {state.students.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </Field>
-          <button onClick={() => setMode('behavior')} className="text-xs font-bold rounded-lg px-3 py-2" style={{ background: COLORS.behavior, color: '#0B0F16' }}>+ Behavior</button>
-          <button onClick={() => setMode('academic')} className="text-xs font-bold rounded-lg px-3 py-2" style={{ background: COLORS.coding, color: '#0B0F16' }}>+ Academic</button>
+          <button onClick={() => setMode('behavior')} className="text-xs font-bold rounded-lg px-3 py-2" style={{ background: COLORS.behavior, color: COLORS.onAccent }}>+ Behavior</button>
+          <button onClick={() => setMode('academic')} className="text-xs font-bold rounded-lg px-3 py-2" style={{ background: COLORS.coding, color: COLORS.onAccent }}>+ Academic</button>
         </div>
       </Card>
 
@@ -1542,7 +1603,7 @@ function BehaviorAssessmentModal({ categories, onClose, onSubmit }) {
         {categories.map(c => <RatingInput key={c} label={c} value={ratings[c]} onChange={v => setRatings(r => ({ ...r, [c]: v }))} color={COLORS.behavior} />)}
         <div className="text-xs font-bold text-right" style={{ color: COLORS.behavior }}>Overall: {overall}%</div>
         <Field label="Comment (optional)"><textarea value={comment} onChange={e => setComment(e.target.value)} rows={2} style={{ ...inputStyle, resize: 'none' }} /></Field>
-        <button onClick={() => onSubmit(ratings, comment)} className="w-full font-bold text-sm rounded-lg py-2.5" style={{ background: COLORS.behavior, color: '#0B0F16' }}>Save Assessment</button>
+        <button onClick={() => onSubmit(ratings, comment)} className="w-full font-bold text-sm rounded-lg py-2.5" style={{ background: COLORS.behavior, color: COLORS.onAccent }}>Save Assessment</button>
       </div>
     </ModalShell>
   );
@@ -1562,7 +1623,7 @@ function AcademicAssessmentModal({ categories, onClose, onSubmit }) {
         ))}
         <div className="text-xs font-bold text-right" style={{ color: COLORS.coding }}>Overall: {overall}%</div>
         <Field label="Comment (optional)"><textarea value={comment} onChange={e => setComment(e.target.value)} rows={2} style={{ ...inputStyle, resize: 'none' }} /></Field>
-        <button onClick={() => onSubmit(scores, comment)} className="w-full font-bold text-sm rounded-lg py-2.5" style={{ background: COLORS.coding, color: '#0B0F16' }}>Save Assessment</button>
+        <button onClick={() => onSubmit(scores, comment)} className="w-full font-bold text-sm rounded-lg py-2.5" style={{ background: COLORS.coding, color: COLORS.onAccent }}>Save Assessment</button>
       </div>
     </ModalShell>
   );
@@ -1611,7 +1672,7 @@ function ChallengesTab({ state, persist, classId, scopedStudents, isAdmin }) {
             <Field label="Start"><input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} style={inputStyle} /></Field>
             <Field label="End"><input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} style={inputStyle} /></Field>
           </div>
-          <button onClick={addChallenge} className="w-full font-bold text-xs rounded-lg py-2.5" style={{ background: COLORS.challenge, color: '#0B0F16' }}>Create Challenge</button>
+          <button onClick={addChallenge} className="w-full font-bold text-xs rounded-lg py-2.5" style={{ background: COLORS.challenge, color: COLORS.onAccent }}>Create Challenge</button>
         </div>
       </Card>
 
@@ -1683,7 +1744,7 @@ function RecognizeModal({ state, onClose, onSubmit }) {
         </Field>
         <Field label="Points"><input type="number" value={points} onChange={e => setPoints(e.target.value)} style={inputStyle} /></Field>
         <Field label="Comment (optional)"><textarea value={comment} onChange={e => setComment(e.target.value)} rows={2} placeholder="You supported your team and helped them solve the problem." style={{ ...inputStyle, resize: 'none' }} /></Field>
-        <button onClick={() => onSubmit({ studentId, behaviorId, points, comment })} className="w-full font-bold text-sm rounded-lg py-2.5" style={{ background: COLORS.xp, color: '#0B0F16' }}>
+        <button onClick={() => onSubmit({ studentId, behaviorId, points, comment })} className="w-full font-bold text-sm rounded-lg py-2.5" style={{ background: COLORS.xp, color: COLORS.onAccent }}>
           Award Recognition
         </button>
       </div>
@@ -1705,22 +1766,34 @@ function AdminApp({ state, persist, email }) {
     { id: 'challenges', label: 'Challenges', icon: ListChecks },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
-  return (
-    <div className="space-y-5">
-      <div className="flex items-center gap-2">
-        <ShieldCheck size={18} style={{ color: COLORS.challenge }} />
-        <div>
-          <h1 className="text-lg font-black">Admin Dashboard</h1>
-          <p className="text-xs" style={{ color: COLORS.textFaint }}>School-wide behavior, academics &amp; competition.</p>
-        </div>
+  const sidebarHeader = (
+    <div>
+      <div className="text-[11px] font-black uppercase tracking-wide flex items-center gap-1.5" style={{ color: COLORS.sidebarActive }}>
+        <ShieldCheck size={13} /> Admin
       </div>
-      <NavTabs tabs={tabs} active={tab} onChange={setTab} accent={COLORS.challenge} />
-      {tab === 'overview' && <AdminOverviewTab state={state} />}
-      {tab === 'classes' && <AdminClassesTab state={state} persist={persist} email={email} />}
-      {tab === 'team' && <AdminTeamTab state={state} persist={persist} />}
-      {tab === 'competition' && <AdminCompetitionTab state={state} persist={persist} />}
-      {tab === 'challenges' && <ChallengesTab state={state} persist={persist} classId={null} scopedStudents={state.students} isAdmin={true} />}
-      {tab === 'settings' && <AdminSettingsTab state={state} persist={persist} />}
+      <div className="text-sm font-bold mt-1" style={{ color: COLORS.onAccent }}>{email}</div>
+      <div className="text-[10.5px] mt-0.5" style={{ color: COLORS.sidebarText }}>{state.classes.length} classes</div>
+    </div>
+  );
+  return (
+    <div className="md:flex md:gap-5 items-start">
+      <Sidebar tabs={tabs} active={tab} onChange={setTab} dark header={sidebarHeader} />
+      <div className="flex-1 min-w-0 space-y-5">
+        <div className="flex items-center gap-2">
+          <ShieldCheck size={18} style={{ color: COLORS.challenge }} />
+          <div>
+            <h1 className="text-lg font-black">Admin Dashboard</h1>
+            <p className="text-xs" style={{ color: COLORS.textFaint }}>School-wide behavior, academics &amp; competition.</p>
+          </div>
+        </div>
+        <div className="md:hidden"><NavTabs tabs={tabs} active={tab} onChange={setTab} accent={COLORS.challenge} /></div>
+        {tab === 'overview' && <AdminOverviewTab state={state} />}
+        {tab === 'classes' && <AdminClassesTab state={state} persist={persist} email={email} />}
+        {tab === 'team' && <AdminTeamTab state={state} persist={persist} />}
+        {tab === 'competition' && <AdminCompetitionTab state={state} persist={persist} />}
+        {tab === 'challenges' && <ChallengesTab state={state} persist={persist} classId={null} scopedStudents={state.students} isAdmin={true} />}
+        {tab === 'settings' && <AdminSettingsTab state={state} persist={persist} />}
+      </div>
     </div>
   );
 }
@@ -1814,7 +1887,7 @@ function AdminClassesTab({ state, persist, email }) {
           <div className="text-xs mb-2" style={{ color: COLORS.textMuted }}>
             Adds students, assessments and points to classes 6B, 6C, 7A, 7B, 7C (your existing class and students are untouched) plus two closed competition months, so you can see the full competition system working.
           </div>
-          <button onClick={loadDemoData} className="text-xs font-bold rounded-lg px-3 py-2" style={{ background: COLORS.xp, color: '#0B0F16' }}>Load Demo Data</button>
+          <button onClick={loadDemoData} className="text-xs font-bold rounded-lg px-3 py-2" style={{ background: COLORS.xp, color: COLORS.onAccent }}>Load Demo Data</button>
         </Card>
       )}
 
@@ -1822,7 +1895,7 @@ function AdminClassesTab({ state, persist, email }) {
         <SectionLabel icon={Plus} color={COLORS.coding}>Add a class</SectionLabel>
         <div className="flex gap-2">
           <input value={newClassName} onChange={e => setNewClassName(e.target.value)} placeholder="e.g. 8A" style={inputStyle} />
-          <button onClick={addClass} className="text-xs font-bold rounded-lg px-3 shrink-0" style={{ background: COLORS.coding, color: '#0B0F16' }}>Add</button>
+          <button onClick={addClass} className="text-xs font-bold rounded-lg px-3 shrink-0" style={{ background: COLORS.coding, color: COLORS.onAccent }}>Add</button>
         </div>
       </Card>
 
@@ -1885,7 +1958,7 @@ function AdminTeamTab({ state, persist }) {
           <select value={newClassId} onChange={e => setNewClassId(e.target.value)} style={inputStyle}>
             {state.classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
-          <button onClick={addAssignment} className="text-xs font-bold rounded-lg px-3" style={{ background: COLORS.robotics, color: '#0B0F16' }}>Assign</button>
+          <button onClick={addAssignment} className="text-xs font-bold rounded-lg px-3" style={{ background: COLORS.robotics, color: COLORS.onAccent }}>Assign</button>
         </div>
       </Card>
 
@@ -1930,7 +2003,7 @@ function AdminCompetitionTab({ state, persist }) {
   return (
     <div className="space-y-6">
       <CompetitionBoard title={`\u{1F3C6} Monthly Class Challenge \u2014 ${monthLabel(monthKey)} (live)`} data={live} />
-      <button onClick={finalizeMonth} className="text-xs font-bold rounded-lg px-3 py-2" style={{ background: COLORS.xp, color: '#0B0F16' }}>Finalize &amp; Close {monthLabel(monthKey)}</button>
+      <button onClick={finalizeMonth} className="text-xs font-bold rounded-lg px-3 py-2" style={{ background: COLORS.xp, color: COLORS.onAccent }}>Finalize &amp; Close {monthLabel(monthKey)}</button>
 
       <div>
         <SectionLabel icon={CalendarDays} color={COLORS.robotics}>Competition History</SectionLabel>
@@ -1953,32 +2026,61 @@ function AdminCompetitionTab({ state, persist }) {
 }
 
 function CompetitionBoard({ title, data, compact }) {
-  const medal = ['\u{1F947}', '\u{1F948}', '\u{1F949}'];
+  const podiumColors = [COLORS.xp, COLORS.textFaint, COLORS.reward];
+  const podiumBg = ['#7C5CFC', '#9CA3AF', '#F59E0B'];
+  const top3 = data.results.slice(0, 3);
   const champion = data.results[0];
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       {title && <SectionLabel icon={Trophy} color={COLORS.xp}>{title}</SectionLabel>}
+
+      {!compact && top3.length > 0 && (
+        <div className="grid grid-cols-3 gap-3 items-end">
+          {[top3[1], top3[0], top3[2]].map((r, i) => {
+            if (!r) return <div key={i} />;
+            const isFirst = r.rank === 1;
+            return (
+              <div key={r.classId} className="rounded-2xl border p-4 text-center shadow-sm" style={{
+                background: isFirst ? `${COLORS.xp}0F` : COLORS.panel,
+                borderColor: isFirst ? COLORS.xp : COLORS.border,
+                borderWidth: isFirst ? 2 : 1,
+                paddingTop: isFirst ? 24 : 16,
+              }}>
+                <div className="w-9 h-9 rounded-full flex items-center justify-center font-black text-xs mx-auto mb-2" style={{ background: podiumBg[r.rank - 1], color: COLORS.onAccent }}>
+                  {r.rank}
+                </div>
+                <div className="text-lg font-black" style={{ color: COLORS.text }}>{r.className}</div>
+                <div className="flex items-center justify-center gap-1 text-sm font-bold mt-1" style={{ color: podiumColors[r.rank - 1] }}>
+                  <Trophy size={13} /> {r.finalScore}
+                </div>
+                {isFirst && <Bar value={100} color={COLORS.xp} height={4} />}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {champion && !compact && (
         <Card style={{ background: `linear-gradient(135deg, ${COLORS.panel}, ${COLORS.panelAlt})`, borderColor: `${COLORS.xp}55` }}>
           <div className="text-[11px] font-bold uppercase mb-1" style={{ color: COLORS.xp }}>{'\u{1F3C6}'} Class Champion</div>
           <div className="text-2xl font-black">{champion.className}</div>
           <div className="text-xs font-mono mt-1" style={{ color: COLORS.textMuted }}>Final Score: <b style={{ color: COLORS.xp }}>{champion.finalScore}</b> {'\u2022'} {champion.studentCount} students</div>
-          <button onClick={() => window.print()} className="mt-3 text-[11px] font-bold rounded-lg px-3 py-1.5 flex items-center gap-1.5 w-fit" style={{ background: COLORS.xp, color: '#0B0F16' }}>
+          <button onClick={() => window.print()} className="mt-3 text-[11px] font-bold rounded-lg px-3 py-1.5 flex items-center gap-1.5 w-fit" style={{ background: COLORS.xp, color: COLORS.onAccent }}>
             <Printer size={12} /> Print / Download Certificate
           </button>
         </Card>
       )}
-      <div className="rounded-2xl border overflow-hidden" style={{ borderColor: COLORS.border }}>
+      <div className="rounded-2xl border overflow-hidden shadow-sm" style={{ borderColor: COLORS.border }}>
         <div className="grid grid-cols-[auto_1fr_auto_auto_auto_auto] gap-2 px-3 py-2 text-[9.5px] font-bold uppercase" style={{ background: COLORS.panelAlt, color: COLORS.textFaint }}>
           <div>#</div><div>Class</div><div className="text-right">Points</div><div className="text-right">Behavior</div><div className="text-right">Academic</div><div className="text-right">Final</div>
         </div>
         {data.results.map(r => (
-          <div key={r.classId} className="grid grid-cols-[auto_1fr_auto_auto_auto_auto] gap-2 px-3 py-2 text-xs border-t items-center" style={{ borderColor: COLORS.border }}>
-            <div>{medal[r.rank - 1] || r.rank}</div>
-            <div className="font-semibold">{r.className}</div>
-            <div className="text-right font-mono">{r.pointsScore}</div>
-            <div className="text-right font-mono">{r.behaviorScore}%</div>
-            <div className="text-right font-mono">{r.academicScore}%</div>
+          <div key={r.classId} className="grid grid-cols-[auto_1fr_auto_auto_auto_auto] gap-2 px-3 py-2.5 text-xs border-t items-center" style={{ borderColor: COLORS.border, background: r.rank === 1 ? `${COLORS.xp}0A` : 'transparent' }}>
+            <div className="font-bold" style={{ color: r.rank <= 3 ? podiumColors[r.rank - 1] : COLORS.textFaint }}>#{r.rank}</div>
+            <div className="font-semibold" style={{ color: COLORS.text }}>{r.className}</div>
+            <div className="text-right font-mono" style={{ color: COLORS.textMuted }}>{r.pointsScore}</div>
+            <div className="text-right font-mono" style={{ color: COLORS.textMuted }}>{r.behaviorScore}%</div>
+            <div className="text-right font-mono" style={{ color: COLORS.textMuted }}>{r.academicScore}%</div>
             <div className="text-right font-mono font-bold" style={{ color: COLORS.xp }}>{r.finalScore}</div>
           </div>
         ))}
