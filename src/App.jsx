@@ -164,29 +164,151 @@ function defaultState() {
 
 function uid(p) { return p + '_' + Math.random().toString(36).slice(2, 9); }
 
-/* --------------------------------- storage (Supabase) ------------------------ */
-// The whole app's data lives in one row (id = 1) of `classroom_state`, in a
-// single jsonb column. This mirrors a simple key-value store but on a real,
-// shared Postgres database anyone with the URL can reach.
+/* --------------------------------- storage (Supabase, v2 relational) --------- */
+// Sensitive data (students, classes, points, assessments, competitions, staff
+// roles) now lives in real tables with Postgres RLS enforcing who can read/
+// write what — see supabase/schema_v2_secure.sql. Lower-stakes data (reward/
+// badge catalogs, goals, notes, mission, challenges, notifications) stays as
+// one JSON document per school in `school_data`. The functions below fetch
+// from all of these and assemble them into the SAME shape the rest of this
+// file already expects, so the UI code barely has to change.
 
-const ROW_ID = 1;
+const SCHOOL_ID = import.meta.env.VITE_SCHOOL_ID;
+
+function rowToBehaviorLog(p) { return { id: p.id, studentId: p.student_id, behaviorId: null, category: p.category, name: p.name, points: p.points, comment: p.comment || '', date: p.created_at }; }
+function rowToStudent(s) { return { id: s.id, name: s.name, ageGroup: s.age_group, classId: s.class_id }; }
+function rowToClass(c) { return { id: c.id, name: c.name }; }
+function rowToBehaviorAssessment(a) { return { id: a.id, studentId: a.student_id, classId: a.class_id, date: a.created_at, ratings: a.ratings, comment: a.comment || '' }; }
+function rowToAcademicAssessment(a) { return { id: a.id, studentId: a.student_id, classId: a.class_id, date: a.created_at, scores: a.scores, comment: a.comment || '' }; }
+function rowToCompetition(c) { return { monthKey: c.month_key, weights: c.weights, results: c.results, winnerClassId: c.winner_class_id, closedAt: c.closed_at }; }
+function rowToRedemption(r) { return { id: r.id, studentId: r.student_id, rewardId: r.reward_id, date: r.created_at }; }
+function rowToReflection(r) { return { id: r.id, studentId: r.student_id, feeling: r.feeling, improvement: r.improvement, date: r.created_at }; }
 
 async function loadState() {
-  const { data, error } = await supabase.from('classroom_state').select('data').eq('id', ROW_ID).single();
-  if (error || !data || !data.data || Object.keys(data.data).length === 0) {
-    const seeded = defaultState();
-    await saveState(seeded);
-    return seeded;
+  if (!SCHOOL_ID) {
+    // eslint-disable-next-line no-console
+    console.error('Missing VITE_SCHOOL_ID. Set it to the school row created by the migration script.');
   }
-  return { ...defaultState(), ...data.data };
+  const [classesR, studentsR, pointsR, bAssessR, aAssessR, compsR, profilesR, redemptionsR, reflectionsR, schoolDataR] = await Promise.all([
+    supabase.from('classes').select('*').eq('school_id', SCHOOL_ID),
+    supabase.from('students').select('*').eq('school_id', SCHOOL_ID),
+    supabase.from('point_transactions').select('*').eq('school_id', SCHOOL_ID).order('created_at'),
+    supabase.from('behavior_assessments').select('*').eq('school_id', SCHOOL_ID).order('created_at', { ascending: false }),
+    supabase.from('academic_assessments').select('*').eq('school_id', SCHOOL_ID).order('created_at', { ascending: false }),
+    supabase.from('competitions').select('*').eq('school_id', SCHOOL_ID),
+    supabase.from('profiles').select('*').eq('school_id', SCHOOL_ID),
+    supabase.from('redemptions').select('*').eq('school_id', SCHOOL_ID).order('created_at', { ascending: false }),
+    supabase.from('reflections').select('*').eq('school_id', SCHOOL_ID).order('created_at', { ascending: false }),
+    supabase.from('school_data').select('*').eq('school_id', SCHOOL_ID).maybeSingle(),
+  ]);
+  [classesR, studentsR, pointsR, bAssessR, aAssessR, compsR, profilesR, redemptionsR, reflectionsR, schoolDataR].forEach(r => {
+    if (r.error) console.error('load error:', r.error.message);
+  });
+
+  const spentXP = {};
+  (redemptionsR.data || []).forEach(r => { spentXP[r.student_id] = (spentXP[r.student_id] || 0) + r.cost; });
+
+  const teacherAssignments = {};
+  (profilesR.data || []).forEach(p => { if (p.email) teacherAssignments[p.email.toLowerCase()] = { isAdmin: p.is_admin, classId: p.class_id }; });
+
+  const extra = schoolDataR.data?.data || {};
+
+  return {
+    ...defaultState(),
+    ...extra,
+    classes: (classesR.data || []).map(rowToClass),
+    students: (studentsR.data || []).map(rowToStudent),
+    behaviorLog: (pointsR.data || []).map(rowToBehaviorLog),
+    behaviorAssessments: (bAssessR.data || []).map(rowToBehaviorAssessment),
+    academicAssessments: (aAssessR.data || []).map(rowToAcademicAssessment),
+    competitions: (compsR.data || []).map(rowToCompetition),
+    teacherAssignments,
+    redemptions: (redemptionsR.data || []).map(rowToRedemption),
+    reflections: (reflectionsR.data || []).map(rowToReflection),
+    spentXP,
+    academicPoints: {}, // folded into point_transactions; kept as empty object for shape compatibility
+  };
 }
 
-async function saveState(state) {
-  const { error } = await supabase
-    .from('classroom_state')
-    .update({ data: state, updated_at: new Date().toISOString() })
-    .eq('id', ROW_ID);
-  if (error) console.error('save failed', error);
+// For the small amount of remaining low-stakes data (catalogs, goals, notes,
+// mission, challenges, notifications, competition weight config), still
+// writable only by authenticated staff of this school.
+async function saveSchoolData(state) {
+  const payload = {
+    behaviors: state.behaviors, rewards: state.rewards, studentBadges: state.studentBadges,
+    goals: state.goals, notes: state.notes, mission: state.mission, challenges: state.challenges,
+    notifications: state.notifications, competitionConfig: state.competitionConfig,
+  };
+  const { error } = await supabase.from('school_data').upsert({ school_id: SCHOOL_ID, data: payload, updated_at: new Date().toISOString() });
+  if (error) console.error('save failed:', error.message);
+}
+
+/* --------------------------- relational write actions ------------------------ */
+// Every function here does exactly one thing to exactly one table, guarded by
+// the RLS policies in schema_v2_secure.sql. Components never call `supabase`
+// directly for sensitive data — they go through these.
+
+async function dbAddStudent({ name, ageGroup, classId }) {
+  const { error } = await supabase.from('students').insert({ school_id: SCHOOL_ID, name, age_group: ageGroup, class_id: classId || null });
+  if (error) throw error;
+}
+async function dbRemoveStudent(id) {
+  const { error } = await supabase.from('students').delete().eq('id', id);
+  if (error) throw error;
+}
+async function dbAssignStudentClass(id, classId) {
+  const { error } = await supabase.from('students').update({ class_id: classId || null }).eq('id', id);
+  if (error) throw error;
+}
+async function dbAddClass(name) {
+  const { error } = await supabase.from('classes').insert({ school_id: SCHOOL_ID, name });
+  if (error) throw error;
+}
+async function dbRemoveClass(id) {
+  const { error } = await supabase.from('classes').delete().eq('id', id);
+  if (error) throw error;
+}
+async function dbAwardPoints({ studentId, classId, category, name, points, comment, awardedBy }) {
+  const { error } = await supabase.from('point_transactions').insert({
+    school_id: SCHOOL_ID, student_id: studentId, class_id: classId || null,
+    category, name, points: Number(points), comment: comment || null, awarded_by: awardedBy || null,
+  });
+  if (error) throw error;
+}
+async function dbAddBehaviorAssessment({ studentId, classId, teacherId, ratings, comment }) {
+  const { error } = await supabase.from('behavior_assessments').insert({ school_id: SCHOOL_ID, student_id: studentId, class_id: classId || null, teacher_id: teacherId || null, ratings, comment: comment || null });
+  if (error) throw error;
+}
+async function dbAddAcademicAssessment({ studentId, classId, teacherId, scores, comment }) {
+  const { error } = await supabase.from('academic_assessments').insert({ school_id: SCHOOL_ID, student_id: studentId, class_id: classId || null, teacher_id: teacherId || null, scores, comment: comment || null });
+  if (error) throw error;
+}
+async function dbFinalizeCompetition(snapshot) {
+  const { error } = await supabase.from('competitions').upsert({
+    school_id: SCHOOL_ID, month_key: snapshot.monthKey, weights: snapshot.weights, results: snapshot.results,
+    winner_class_id: snapshot.winnerClassId, closed_at: snapshot.closedAt,
+  }, { onConflict: 'school_id,month_key' });
+  if (error) throw error;
+}
+async function dbAssignTeacher({ email, isAdmin, classId }) {
+  const { error } = await supabase.rpc('admin_assign_teacher', { p_email: email, p_is_admin: !!isAdmin, p_class_id: classId || null });
+  if (error) throw error;
+}
+async function dbRemoveTeacher(email) {
+  const { error } = await supabase.rpc('admin_remove_teacher', { p_email: email });
+  if (error) throw error;
+}
+async function dbAddReflection({ studentId, feeling, improvement }) {
+  const { error } = await supabase.from('reflections').insert({ school_id: SCHOOL_ID, student_id: studentId, feeling, improvement });
+  if (error) throw error;
+}
+async function dbRedeem({ studentId, classId, rewardId, rewardName, cost }) {
+  const { error } = await supabase.from('redemptions').insert({ school_id: SCHOOL_ID, student_id: studentId, class_id: classId || null, reward_id: rewardId, reward_name: rewardName, cost });
+  if (error) throw error;
+}
+async function dbBootstrapAdmin({ userId, email }) {
+  const { error } = await supabase.from('profiles').insert({ id: userId, school_id: SCHOOL_ID, email, is_admin: true });
+  if (error) throw error;
 }
 
 /* --------------------------------- helpers ----------------------------------- */
@@ -365,87 +487,107 @@ function ageTheme(ageGroup) {
 // the Admin > Classes tab to populate the other demo classes for evaluation.
 
 const DEMO_ROSTER = {
-  c2: ['Hassan', 'Nour', 'Khalid', 'Reem', 'Fahad', 'Dana'],
-  c3: ['Zayd', 'Lina', 'Tariq', 'Huda', 'Rashid', 'Mona'],
-  c4: ['Salem', 'Aisha', 'Waleed', 'Farah', 'Nasser'],
-  c5: ['Bader', 'Yara', 'Faisal', 'Amina', 'Talal'],
-  c6: ['Majed', 'Salma', 'Adel', 'Noor', 'Karim'],
+  '6B': ['Hassan', 'Nour', 'Khalid', 'Reem', 'Fahad', 'Dana'],
+  '6C': ['Zayd', 'Lina', 'Tariq', 'Huda', 'Rashid', 'Mona'],
+  '7A': ['Salem', 'Aisha', 'Waleed', 'Farah', 'Nasser'],
+  '7B': ['Bader', 'Yara', 'Faisal', 'Amina', 'Talal'],
+  '7C': ['Majed', 'Salma', 'Adel', 'Noor', 'Karim'],
 };
-// tuned so 6C (c3) leads August, matching the target-score example in the spec
+// tuned so 6C leads August, matching the target-score example in the original spec
 const DEMO_TUNING = {
-  c1: { behavior: 91, academic: 88, pointsPerStudent: 78 },
-  c2: { behavior: 94, academic: 86, pointsPerStudent: 82 },
-  c3: { behavior: 92, academic: 93, pointsPerStudent: 95 },
-  c4: { behavior: 87, academic: 84, pointsPerStudent: 70 },
-  c5: { behavior: 85, academic: 81, pointsPerStudent: 65 },
-  c6: { behavior: 88, academic: 85, pointsPerStudent: 72 },
+  '6A': { behavior: 91, academic: 88, pointsPerStudent: 78 },
+  '6B': { behavior: 94, academic: 86, pointsPerStudent: 82 },
+  '6C': { behavior: 92, academic: 93, pointsPerStudent: 95 },
+  '7A': { behavior: 87, academic: 84, pointsPerStudent: 70 },
+  '7B': { behavior: 85, academic: 81, pointsPerStudent: 65 },
+  '7C': { behavior: 88, academic: 85, pointsPerStudent: 72 },
 };
 
-function buildDemoExpansion(state, teacherEmail) {
-  const existingIds = new Set(state.students.map(s => s.id));
-  const newStudents = [];
-  const newBehaviorLog = [];
-  const newBehaviorAssessments = [];
-  const newAcademicAssessments = [];
-  const thisMonth = currentMonthKey();
+// Populates the other demo classes for evaluation. Additive and safe to run
+// once: it only creates classes/students that don't already exist by name,
+// and never touches your real class or students.
+async function dbLoadDemoData(state, userId) {
   const ageGroups = ['primary', 'middle', 'middle', 'high', 'high'];
+  const thisMonth = currentMonthKey();
 
-  Object.entries(DEMO_ROSTER).forEach(([classId, names]) => {
+  const classByName = {};
+  state.classes.forEach(c => { classByName[c.name] = c.id; });
+  for (const name of ['6A', '6B', '6C', '7A', '7B', '7C']) {
+    if (!classByName[name]) {
+      const { data, error } = await supabase.from('classes').insert({ school_id: SCHOOL_ID, name }).select().single();
+      if (error) throw error;
+      classByName[name] = data.id;
+    }
+  }
+
+  const existingNames = new Set(state.students.filter(s => s.classId).map(s => `${s.classId}::${s.name}`));
+  const studentRows = [];
+  Object.entries(DEMO_ROSTER).forEach(([clsName, names]) => {
+    const classId = classByName[clsName];
     names.forEach((name, i) => {
-      const id = `demo_${classId}_${i}`;
-      if (existingIds.has(id)) return;
-      newStudents.push({ id, name, ageGroup: ageGroups[i % ageGroups.length], classId });
+      if (existingNames.has(`${classId}::${name}`)) return;
+      studentRows.push({ school_id: SCHOOL_ID, class_id: classId, name, age_group: ageGroups[i % ageGroups.length] });
     });
   });
+  let insertedStudents = [];
+  if (studentRows.length) {
+    const { data, error } = await supabase.from('students').insert(studentRows).select();
+    if (error) throw error;
+    insertedStudents = data;
+  }
 
-  const allDemoStudents = [...state.students.filter(s => s.classId), ...newStudents];
-  Object.keys(DEMO_TUNING).forEach(classId => {
-    const tune = DEMO_TUNING[classId];
+  const allDemoStudents = [...state.students.filter(s => s.classId), ...insertedStudents.map(rowToStudent)];
+  const pointRows = [], behaviorAssessRows = [], academicAssessRows = [];
+
+  Object.entries(DEMO_TUNING).forEach(([clsName, tune]) => {
+    const classId = classByName[clsName];
     const studs = allDemoStudents.filter(s => s.classId === classId);
     studs.forEach((s, idx) => {
-      const jitter = (idx % 3) - 1; // -1,0,1 small spread per student
-      // behavior recognitions this month (drives class points score)
+      const jitter = (idx % 3) - 1;
       const recognitions = Math.max(1, Math.round(tune.pointsPerStudent / 10) + jitter);
       for (let r = 0; r < recognitions; r++) {
         const b = DEFAULT_BEHAVIORS[(idx + r) % DEFAULT_BEHAVIORS.length];
-        newBehaviorLog.push({
-          id: uid('log'), studentId: s.id, behaviorId: b.id, category: b.category, name: b.name,
-          points: b.points, comment: '', date: `${thisMonth}-${String(2 + (r % 26)).padStart(2, '0')}T09:00:00.000Z`,
+        pointRows.push({
+          school_id: SCHOOL_ID, student_id: s.id, class_id: classId, category: b.category, name: b.name,
+          points: b.points, awarded_by: userId, created_at: `${thisMonth}-${String(2 + (r % 26)).padStart(2, '0')}T09:00:00.000Z`,
         });
       }
-      // one behavior assessment + one academic assessment this month
       const bRatings = {};
       BEHAVIOR_ASSESS_CATEGORIES.forEach((cat, ci) => { bRatings[cat] = Math.max(1, Math.min(5, Math.round(tune.behavior / 20) + ((idx + ci) % 2 === 0 ? 0 : jitter))); });
-      newBehaviorAssessments.push({ id: uid('ba'), studentId: s.id, classId, teacherEmail: teacherEmail || 'demo@school.local', date: `${thisMonth}-10T09:00:00.000Z`, ratings: bRatings, comment: 'Demo assessment.' });
+      behaviorAssessRows.push({ school_id: SCHOOL_ID, student_id: s.id, class_id: classId, teacher_id: userId, ratings: bRatings, comment: 'Demo assessment.', created_at: `${thisMonth}-10T09:00:00.000Z` });
 
       const aScores = {};
       ACADEMIC_CATEGORIES.forEach((cat, ci) => { aScores[cat] = Math.max(50, Math.min(100, tune.academic + (((idx + ci) % 5) - 2))); });
-      newAcademicAssessments.push({ id: uid('aa'), studentId: s.id, classId, teacherEmail: teacherEmail || 'demo@school.local', date: `${thisMonth}-10T09:00:00.000Z`, scores: aScores, comment: 'Demo assessment.' });
+      academicAssessRows.push({ school_id: SCHOOL_ID, student_id: s.id, class_id: classId, teacher_id: userId, scores: aScores, comment: 'Demo assessment.', created_at: `${thisMonth}-10T09:00:00.000Z` });
     });
   });
 
-  const demoCompetitions = [
-    { monthKey: '2026-06', weights: DEFAULT_COMPETITION_WEIGHTS, closedAt: '2026-06-30T18:00:00.000Z', winnerClassId: 'c4',
-      results: [
-        { classId: 'c4', className: '7A', studentCount: 5, pointsAvg: 74, behaviorScore: 90, academicScore: 89, pointsScore: 100, finalScore: 93.7, rank: 1 },
-        { classId: 'c3', className: '6C', studentCount: 6, pointsAvg: 70, behaviorScore: 88, academicScore: 90, pointsScore: 95, finalScore: 91.4, rank: 2 },
-        { classId: 'c2', className: '6B', studentCount: 6, pointsAvg: 68, behaviorScore: 91, academicScore: 84, pointsScore: 92, finalScore: 89.9, rank: 3 },
-        { classId: 'c1', className: '6A', studentCount: 6, pointsAvg: 60, behaviorScore: 89, academicScore: 85, pointsScore: 81, finalScore: 86.0, rank: 4 },
-        { classId: 'c5', className: '7B', studentCount: 5, pointsAvg: 55, behaviorScore: 84, academicScore: 80, pointsScore: 74, finalScore: 79.6, rank: 5 },
-        { classId: 'c6', className: '7C', studentCount: 5, pointsAvg: 52, behaviorScore: 86, academicScore: 82, pointsScore: 70, finalScore: 79.4, rank: 6 },
-      ] },
-    { monthKey: '2026-07', weights: DEFAULT_COMPETITION_WEIGHTS, closedAt: '2026-07-31T18:00:00.000Z', winnerClassId: 'c2',
-      results: [
-        { classId: 'c2', className: '6B', studentCount: 6, pointsAvg: 80, behaviorScore: 93, academicScore: 88, pointsScore: 100, finalScore: 94.3, rank: 1 },
-        { classId: 'c3', className: '6C', studentCount: 6, pointsAvg: 76, behaviorScore: 90, academicScore: 91, pointsScore: 95, finalScore: 93.3, rank: 2 },
-        { classId: 'c1', className: '6A', studentCount: 6, pointsAvg: 65, behaviorScore: 90, academicScore: 86, pointsScore: 81, finalScore: 85.6, rank: 3 },
-        { classId: 'c4', className: '7A', studentCount: 5, pointsAvg: 60, behaviorScore: 86, academicScore: 83, pointsScore: 75, finalScore: 81.6, rank: 4 },
-        { classId: 'c6', className: '7C', studentCount: 5, pointsAvg: 58, behaviorScore: 87, academicScore: 84, pointsScore: 73, finalScore: 81.5, rank: 5 },
-        { classId: 'c5', className: '7B', studentCount: 5, pointsAvg: 54, behaviorScore: 83, academicScore: 79, pointsScore: 68, finalScore: 76.9, rank: 6 },
-      ] },
-  ];
+  if (pointRows.length) { const { error } = await supabase.from('point_transactions').insert(pointRows); if (error) throw error; }
+  if (behaviorAssessRows.length) { const { error } = await supabase.from('behavior_assessments').insert(behaviorAssessRows); if (error) throw error; }
+  if (academicAssessRows.length) { const { error } = await supabase.from('academic_assessments').insert(academicAssessRows); if (error) throw error; }
 
-  return { newStudents, newBehaviorLog, newBehaviorAssessments, newAcademicAssessments, demoCompetitions };
+  const demoCompetitions = [
+    { month_key: '2026-06', weights: DEFAULT_COMPETITION_WEIGHTS, closed_at: '2026-06-30T18:00:00.000Z', winner_class_id: classByName['7A'], results: [
+      { classId: classByName['7A'], className: '7A', studentCount: 5, pointsAvg: 74, behaviorScore: 90, academicScore: 89, pointsScore: 100, finalScore: 93.7, rank: 1 },
+      { classId: classByName['6C'], className: '6C', studentCount: 6, pointsAvg: 70, behaviorScore: 88, academicScore: 90, pointsScore: 95, finalScore: 91.4, rank: 2 },
+      { classId: classByName['6B'], className: '6B', studentCount: 6, pointsAvg: 68, behaviorScore: 91, academicScore: 84, pointsScore: 92, finalScore: 89.9, rank: 3 },
+      { classId: classByName['6A'], className: '6A', studentCount: 6, pointsAvg: 60, behaviorScore: 89, academicScore: 85, pointsScore: 81, finalScore: 86.0, rank: 4 },
+      { classId: classByName['7B'], className: '7B', studentCount: 5, pointsAvg: 55, behaviorScore: 84, academicScore: 80, pointsScore: 74, finalScore: 79.6, rank: 5 },
+      { classId: classByName['7C'], className: '7C', studentCount: 5, pointsAvg: 52, behaviorScore: 86, academicScore: 82, pointsScore: 70, finalScore: 79.4, rank: 6 },
+    ] },
+    { month_key: '2026-07', weights: DEFAULT_COMPETITION_WEIGHTS, closed_at: '2026-07-31T18:00:00.000Z', winner_class_id: classByName['6B'], results: [
+      { classId: classByName['6B'], className: '6B', studentCount: 6, pointsAvg: 80, behaviorScore: 93, academicScore: 88, pointsScore: 100, finalScore: 94.3, rank: 1 },
+      { classId: classByName['6C'], className: '6C', studentCount: 6, pointsAvg: 76, behaviorScore: 90, academicScore: 91, pointsScore: 95, finalScore: 93.3, rank: 2 },
+      { classId: classByName['6A'], className: '6A', studentCount: 6, pointsAvg: 65, behaviorScore: 90, academicScore: 86, pointsScore: 81, finalScore: 85.6, rank: 3 },
+      { classId: classByName['7A'], className: '7A', studentCount: 5, pointsAvg: 60, behaviorScore: 86, academicScore: 83, pointsScore: 75, finalScore: 81.6, rank: 4 },
+      { classId: classByName['7C'], className: '7C', studentCount: 5, pointsAvg: 58, behaviorScore: 87, academicScore: 84, pointsScore: 73, finalScore: 81.5, rank: 5 },
+      { classId: classByName['7B'], className: '7B', studentCount: 5, pointsAvg: 54, behaviorScore: 83, academicScore: 79, pointsScore: 68, finalScore: 76.9, rank: 6 },
+    ] },
+  ];
+  for (const comp of demoCompetitions) {
+    const { error } = await supabase.from('competitions').upsert({ school_id: SCHOOL_ID, ...comp }, { onConflict: 'school_id,month_key' });
+    if (error) throw error;
+  }
 }
 
 /* ---------------------------------- bits -------------------------------------- */
@@ -682,25 +824,50 @@ export default function App() {
   }, []);
   useEffect(() => { if (!toast) return; const t = setTimeout(() => setToast(null), 3400); return () => clearTimeout(t); }, [toast]);
 
+  // `persist` still works exactly as before, but now only writes the small
+  // low-stakes JSON document (school_data) — never students/points/classes/etc.
   const persist = useCallback((updater) => {
     setState(prev => {
       const next = typeof updater === 'function' ? updater(prev) : updater;
       const withBadges = { ...next, studentBadges: autoAwardBadges(next) };
-      saveState(withBadges);
+      saveSchoolData(withBadges);
       return withBadges;
     });
   }, []);
 
-  const email = session?.user?.email;
+  const refresh = useCallback(async () => {
+    const fresh = await loadState();
+    const withBadges = { ...fresh, studentBadges: autoAwardBadges(fresh) };
+    setState(withBadges);
+    return withBadges;
+  }, []);
+
+  // Runs a relational write (one of the dbXxx functions above), then reloads
+  // from the database so the UI reflects exactly what's really there — no
+  // hand-maintained local copies of sensitive data to get out of sync.
+  const runDb = useCallback(async (fn, notifBuilder) => {
+    try {
+      await fn();
+    } catch (e) {
+      console.error(e);
+      setToast({ kind: 'reflect', title: 'Could not save', body: e.message || 'Something went wrong — please try again.' });
+      return false;
+    }
+    await refresh();
+    if (notifBuilder) persist(prev => ({ ...prev, notifications: pushNotification(prev, notifBuilder()) }));
+    return true;
+  }, [refresh, persist]);
+
+  const email = session?.user?.email?.toLowerCase();
   const myAssignment = state && email ? state.teacherAssignments[email] : null;
 
   // Bootstrap: the very first person to sign in with no admin yet on record becomes admin.
   useEffect(() => {
-    if (!state || !email) return;
+    if (!state || !email || !session) return;
     if (state.teacherAssignments[email]) return;
     const hasAdmin = Object.values(state.teacherAssignments).some(a => a.isAdmin);
     if (!hasAdmin) {
-      persist(prev => ({ ...prev, teacherAssignments: { ...prev.teacherAssignments, [email]: { isAdmin: true, classId: null } } }));
+      dbBootstrapAdmin({ userId: session.user.id, email }).then(refresh).catch(e => console.error(e));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state && Object.keys(state.teacherAssignments || {}).length, email]);
@@ -717,13 +884,11 @@ export default function App() {
 
   function awardBehavior({ studentId, behaviorId, points, comment }) {
     const behavior = state.behaviors.find(b => b.id === behaviorId);
-    const entry = { id: uid('log'), studentId, behaviorId, category: behavior.category, name: behavior.name, points: Number(points), comment, date: new Date().toISOString() };
     const student = state.students.find(s => s.id === studentId);
-    persist(prev => ({
-      ...prev,
-      behaviorLog: [...prev.behaviorLog, entry],
-      notifications: pushNotification(prev, { scope: 'student', targetId: studentId, message: `\u{1F389} Congratulations! You earned ${points} points for ${behavior.name}.` }),
-    }));
+    runDb(
+      () => dbAwardPoints({ studentId, classId: student?.classId, category: behavior.category, name: behavior.name, points, comment, awardedBy: session?.user?.id }),
+      () => ({ scope: 'student', targetId: studentId, message: `\u{1F389} Congratulations! You earned ${points} points for ${behavior.name}.` })
+    );
     const theme = ageTheme(student.ageGroup);
     setToast({ kind: 'xp', title: theme.xpToast(points), body: `${student.name} \u2014 ${behavior.name}` });
     setShowRecognize(false);
@@ -774,11 +939,11 @@ export default function App() {
 
       <main className="max-w-7xl mx-auto px-4 py-5">
         {role === 'student' && (
-          <StudentApp state={state} activeStudentId={activeStudentId} setActiveStudentId={setActiveStudentId} persist={persist} setToast={setToast} />
+          <StudentApp state={state} activeStudentId={activeStudentId} setActiveStudentId={setActiveStudentId} persist={persist} setToast={setToast} db={runDb} />
         )}
         {role === 'teacher' && session && (
           myClassId || isAdmin ? (
-            <TeacherApp state={state} persist={persist} classId={myClassId} email={email} setToast={setToast} />
+            <TeacherApp state={state} persist={persist} classId={myClassId} email={email} setToast={setToast} db={runDb} session={session} />
           ) : (
             <Card>
               <div className="text-sm font-bold mb-1">Waiting for class assignment</div>
@@ -789,7 +954,7 @@ export default function App() {
           )
         )}
         {role === 'admin' && session && isAdmin && (
-          <AdminApp state={state} persist={persist} email={email} />
+          <AdminApp state={state} persist={persist} email={email} db={runDb} session={session} />
         )}
       </main>
 
@@ -811,7 +976,7 @@ export default function App() {
 
 /* --------------------------------- Student App ---------------------------------- */
 
-function StudentApp({ state, activeStudentId, setActiveStudentId, persist, setToast }) {
+function StudentApp({ state, activeStudentId, setActiveStudentId, persist, setToast, db }) {
   const [tab, setTab] = useState('dashboard');
   const student = state.students.find(s => s.id === activeStudentId) || state.students[0];
   const theme = ageTheme(student.ageGroup);
@@ -831,16 +996,12 @@ function StudentApp({ state, activeStudentId, setActiveStudentId, persist, setTo
   ];
 
   function addReflection(feeling, improvement) {
-    persist(prev => ({ ...prev, reflections: [{ id: uid('refl'), studentId: student.id, feeling, improvement, date: new Date().toISOString() }, ...prev.reflections] }));
+    db(() => dbAddReflection({ studentId: student.id, feeling, improvement }));
     setToast({ kind: 'reflect', title: 'Reflection saved', body: 'Thanks for thinking about your lesson today.' });
   }
   function redeem(reward) {
     if (spendableXP(state, student.id) < reward.cost) return;
-    persist(prev => ({
-      ...prev,
-      spentXP: { ...prev.spentXP, [student.id]: (prev.spentXP[student.id] || 0) + reward.cost },
-      redemptions: [{ id: uid('rdm'), studentId: student.id, rewardId: reward.id, date: new Date().toISOString() }, ...prev.redemptions],
-    }));
+    db(() => dbRedeem({ studentId: student.id, classId: student.classId, rewardId: reward.id, rewardName: reward.name, cost: reward.cost }));
     setToast({ kind: 'reward', title: '\u{1F381} Reward redeemed!', body: reward.name });
   }
 
@@ -1198,7 +1359,7 @@ function LeaderboardTab({ state }) {
 
 /* --------------------------------- Teacher App ----------------------------------- */
 
-function TeacherApp({ state, persist, classId, email, setToast }) {
+function TeacherApp({ state, persist, classId, email, setToast, db, session }) {
   const [tab, setTab] = useState('overview');
   const scoped = { ...state, students: classId ? state.students.filter(s => s.classId === classId) : state.students };
   const tabs = [
@@ -1233,10 +1394,10 @@ function TeacherApp({ state, persist, classId, email, setToast }) {
           {classId && <ClassCompetitionChip state={state} classId={classId} />}
         </div>
         <div className="md:hidden"><NavTabs tabs={tabs} active={tab} onChange={setTab} accent={COLORS.robotics} /></div>
-        {tab === 'overview' && <OverviewTab state={scoped} persist={persist} classId={classId} />}
-        {tab === 'assessments' && <AssessmentsTab state={scoped} persist={persist} classId={classId} email={email} setToast={setToast} />}
-        {tab === 'challenges' && <ChallengesTab state={state} persist={persist} classId={classId} scopedStudents={scoped.students} isAdmin={!classId} />}
-        {tab === 'missions' && <MissionsTab state={scoped} persist={persist} />}
+        {tab === 'overview' && <OverviewTab state={scoped} persist={persist} classId={classId} db={db} session={session} />}
+        {tab === 'assessments' && <AssessmentsTab state={scoped} persist={persist} classId={classId} email={email} setToast={setToast} db={db} session={session} />}
+        {tab === 'challenges' && <ChallengesTab state={state} persist={persist} classId={classId} scopedStudents={scoped.students} isAdmin={!classId} db={db} session={session} />}
+        {tab === 'missions' && <MissionsTab state={scoped} persist={persist} classId={classId} db={db} session={session} />}
         {tab === 'badges' && <BadgesTab state={scoped} />}
         {tab === 'store' && <StoreManageTab state={scoped} persist={persist} />}
         {tab === 'analytics' && <AnalyticsTab state={scoped} />}
@@ -1258,7 +1419,7 @@ function ClassCompetitionChip({ state, classId }) {
   );
 }
 
-function OverviewTab({ state, persist, classId }) {
+function OverviewTab({ state, persist, classId, db, session }) {
   const [expanded, setExpanded] = useState(null);
   const [noteDraft, setNoteDraft] = useState('');
   const [newStudentName, setNewStudentName] = useState('');
@@ -1269,11 +1430,14 @@ function OverviewTab({ state, persist, classId }) {
   const totalBadges = Object.values(state.studentBadges).reduce((s, arr) => s + arr.length, 0);
   const activeStreaks = state.students.filter(st => computeStreak(state, st.id) >= 2).length;
 
-  function addAcademic(id, delta) { persist(prev => ({ ...prev, academicPoints: { ...prev.academicPoints, [id]: (prev.academicPoints[id] || 0) + delta } })); }
+  function addAcademic(id, delta) {
+    const student = state.students.find(s => s.id === id);
+    db(() => dbAwardPoints({ studentId: id, classId: student?.classId, category: 'Academic Achievement', name: delta > 0 ? 'Academic bonus' : 'Academic adjustment', points: delta, awardedBy: session?.user?.id }));
+  }
   function addNote(id, text) { persist(prev => ({ ...prev, notes: [{ id: uid('note'), studentId: id, text, date: new Date().toISOString() }, ...prev.notes] })); }
   function addStudent() {
     if (!newStudentName.trim()) return;
-    persist(prev => ({ ...prev, students: [...prev.students, { id: uid('stu'), name: newStudentName.trim(), ageGroup: 'middle', classId: classId || null }] }));
+    db(() => dbAddStudent({ name: newStudentName.trim(), ageGroup: 'middle', classId }));
     setNewStudentName('');
   }
 
@@ -1363,7 +1527,7 @@ function OverviewTab({ state, persist, classId }) {
   );
 }
 
-function MissionsTab({ state, persist }) {
+function MissionsTab({ state, persist, classId, db }) {
   const mission = state.mission;
   const [text, setText] = useState(mission.text);
   const [xpReward, setXpReward] = useState(mission.xpReward);
@@ -1373,17 +1537,13 @@ function MissionsTab({ state, persist }) {
   function saveMission() {
     persist(prev => ({ ...prev, mission: { ...prev.mission, text, xpReward: Number(xpReward), behaviorPoints: Number(behaviorPoints), badgeHint } }));
   }
-  function markComplete(studentId) {
-    persist(prev => {
-      if (prev.mission.completedBy.includes(studentId)) return prev;
-      const entry = { id: uid('log'), studentId, behaviorId: 'mission', category: 'Participation', name: `Mission: ${prev.mission.text}`, points: Number(prev.mission.behaviorPoints), comment: '', date: new Date().toISOString() };
-      return {
-        ...prev,
-        behaviorLog: [...prev.behaviorLog, entry],
-        academicPoints: { ...prev.academicPoints, [studentId]: (prev.academicPoints[studentId] || 0) + Number(prev.mission.xpReward) },
-        mission: { ...prev.mission, completedBy: [...prev.mission.completedBy, studentId] },
-      };
-    });
+  async function markComplete(studentId) {
+    if (mission.completedBy.includes(studentId)) return;
+    const student = state.students.find(s => s.id === studentId);
+    const sClassId = classId || student?.classId;
+    const ok1 = await db(() => dbAwardPoints({ studentId, classId: sClassId, category: 'Participation', name: `Mission: ${mission.text}`, points: mission.behaviorPoints, awardedBy: session?.user?.id }));
+    if (mission.xpReward) await db(() => dbAwardPoints({ studentId, classId: sClassId, category: 'Academic Achievement', name: `Mission bonus: ${mission.text}`, points: mission.xpReward, awardedBy: session?.user?.id }));
+    if (ok1) persist(prev => ({ ...prev, mission: { ...prev.mission, completedBy: [...prev.mission.completedBy, studentId] } }));
   }
 
   return (
@@ -1543,19 +1703,19 @@ function AnalyticsTab({ state }) {
 
 /* ------------------------------- Assessments (behavior + academic) ---------------------------------- */
 
-function AssessmentsTab({ state, persist, classId, email, setToast }) {
+function AssessmentsTab({ state, persist, classId, email, setToast, db, session }) {
   const [mode, setMode] = useState(null); // 'behavior' | 'academic'
   const [studentId, setStudentId] = useState(state.students[0]?.id);
 
   function saveBehavior(ratings, comment) {
-    const entry = { id: uid('ba'), studentId, classId: classId || state.students.find(s => s.id === studentId)?.classId, teacherEmail: email, date: new Date().toISOString(), ratings, comment };
-    persist(prev => ({ ...prev, behaviorAssessments: [entry, ...prev.behaviorAssessments] }));
+    const sClassId = classId || state.students.find(s => s.id === studentId)?.classId;
+    db(() => dbAddBehaviorAssessment({ studentId, classId: sClassId, teacherId: session?.user?.id, ratings, comment }));
     setToast && setToast({ kind: 'reflect', title: 'Behavior assessment saved', body: state.students.find(s => s.id === studentId)?.name });
     setMode(null);
   }
   function saveAcademic(scores, comment) {
-    const entry = { id: uid('aa'), studentId, classId: classId || state.students.find(s => s.id === studentId)?.classId, teacherEmail: email, date: new Date().toISOString(), scores, comment };
-    persist(prev => ({ ...prev, academicAssessments: [entry, ...prev.academicAssessments] }));
+    const sClassId = classId || state.students.find(s => s.id === studentId)?.classId;
+    db(() => dbAddAcademicAssessment({ studentId, classId: sClassId, teacherId: session?.user?.id, scores, comment }));
     setToast && setToast({ kind: 'reflect', title: 'Academic assessment saved', body: state.students.find(s => s.id === studentId)?.name });
     setMode(null);
   }
@@ -1647,7 +1807,7 @@ function AcademicAssessmentModal({ categories, onClose, onSubmit }) {
 
 /* ------------------------------------ Challenges ------------------------------------- */
 
-function ChallengesTab({ state, persist, classId, scopedStudents, isAdmin }) {
+function ChallengesTab({ state, persist, classId, scopedStudents, isAdmin, db, session }) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [points, setPoints] = useState(20);
@@ -1662,16 +1822,14 @@ function ChallengesTab({ state, persist, classId, scopedStudents, isAdmin }) {
   }
   function toggleStatus(id) { persist(prev => ({ ...prev, challenges: prev.challenges.map(c => c.id === id ? { ...c, status: c.status === 'active' ? 'inactive' : 'active' } : c) })); }
   function removeChallenge(id) { persist(prev => ({ ...prev, challenges: prev.challenges.filter(c => c.id !== id) })); }
-  function completeFor(challenge, studentId) {
+  async function completeFor(challenge, studentId) {
     if (challenge.completedBy.includes(studentId)) return;
-    const behavior = { category: 'Participation', name: `Challenge: ${challenge.name}` };
-    const entry = { id: uid('log'), studentId, behaviorId: 'challenge', category: behavior.category, name: behavior.name, points: challenge.points, comment: '', date: new Date().toISOString() };
-    persist(prev => ({
-      ...prev,
-      behaviorLog: [...prev.behaviorLog, entry],
-      challenges: prev.challenges.map(c => c.id === challenge.id ? { ...c, completedBy: [...c.completedBy, studentId] } : c),
-      notifications: pushNotification(prev, { scope: 'student', targetId: studentId, message: `\u2B50 You completed the "${challenge.name}" challenge and earned ${challenge.points} points!` }),
-    }));
+    const student = state.students.find(s => s.id === studentId);
+    const ok = await db(
+      () => dbAwardPoints({ studentId, classId: student?.classId, category: 'Participation', name: `Challenge: ${challenge.name}`, points: challenge.points, awardedBy: session?.user?.id }),
+      () => ({ scope: 'student', targetId: studentId, message: `\u2B50 You completed the "${challenge.name}" challenge and earned ${challenge.points} points!` })
+    );
+    if (ok) persist(prev => ({ ...prev, challenges: prev.challenges.map(c => c.id === challenge.id ? { ...c, completedBy: [...c.completedBy, studentId] } : c) }));
   }
 
   const visible = classId ? state.challenges.filter(c => !c.eligibleClasses?.length || c.eligibleClasses.includes(classId)) : state.challenges;
@@ -1772,7 +1930,7 @@ function RecognizeModal({ state, onClose, onSubmit }) {
 /* ------------------------------------ Admin App ------------------------------ */
 /* ============================================================================ */
 
-function AdminApp({ state, persist, email }) {
+function AdminApp({ state, persist, email, db, session }) {
   const [tab, setTab] = useState('overview');
   const tabs = [
     { id: 'overview', label: 'Overview', icon: LayoutGrid },
@@ -1804,10 +1962,10 @@ function AdminApp({ state, persist, email }) {
         </div>
         <div className="md:hidden"><NavTabs tabs={tabs} active={tab} onChange={setTab} accent={COLORS.challenge} /></div>
         {tab === 'overview' && <AdminOverviewTab state={state} />}
-        {tab === 'classes' && <AdminClassesTab state={state} persist={persist} email={email} />}
-        {tab === 'team' && <AdminTeamTab state={state} persist={persist} />}
-        {tab === 'competition' && <AdminCompetitionTab state={state} persist={persist} />}
-        {tab === 'challenges' && <ChallengesTab state={state} persist={persist} classId={null} scopedStudents={state.students} isAdmin={true} />}
+        {tab === 'classes' && <AdminClassesTab state={state} persist={persist} email={email} db={db} session={session} />}
+        {tab === 'team' && <AdminTeamTab state={state} persist={persist} db={db} />}
+        {tab === 'competition' && <AdminCompetitionTab state={state} persist={persist} db={db} />}
+        {tab === 'challenges' && <ChallengesTab state={state} persist={persist} classId={null} scopedStudents={state.students} isAdmin={true} db={db} session={session} />}
         {tab === 'settings' && <AdminSettingsTab state={state} persist={persist} />}
       </div>
     </div>
@@ -1868,43 +2026,27 @@ function AdminOverviewTab({ state }) {
   );
 }
 
-function AdminClassesTab({ state, persist, email }) {
+function AdminClassesTab({ state, persist, email, db, session }) {
   const [newClassName, setNewClassName] = useState('');
   const [newStudentName, setNewStudentName] = useState('');
   const [newStudentClassId, setNewStudentClassId] = useState(state.classes[0]?.id || '');
   const [newStudentAge, setNewStudentAge] = useState('middle');
-  const alreadyExpanded = state.students.some(s => s.id.startsWith('demo_'));
+  const alreadyExpanded = state.classes.length > 1 && state.classes.some(c => ['6B', '6C', '7A', '7B', '7C'].includes(c.name));
 
   function addClass() {
     if (!newClassName.trim()) return;
-    persist(prev => ({ ...prev, classes: [...prev.classes, { id: uid('cls'), name: newClassName.trim() }] }));
+    db(() => dbAddClass(newClassName.trim()));
     setNewClassName('');
   }
-  function removeClass(id) {
-    persist(prev => ({ ...prev, classes: prev.classes.filter(c => c.id !== id) }));
-  }
+  function removeClass(id) { db(() => dbRemoveClass(id)); }
   function addStudent() {
     if (!newStudentName.trim()) return;
-    persist(prev => ({ ...prev, students: [...prev.students, { id: uid('stu'), name: newStudentName.trim(), ageGroup: newStudentAge, classId: newStudentClassId || null }] }));
+    db(() => dbAddStudent({ name: newStudentName.trim(), ageGroup: newStudentAge, classId: newStudentClassId }));
     setNewStudentName('');
   }
-  function removeStudent(id) {
-    persist(prev => ({ ...prev, students: prev.students.filter(s => s.id !== id) }));
-  }
-  function assignStudent(studentId, classId) {
-    persist(prev => ({ ...prev, students: prev.students.map(s => s.id === studentId ? { ...s, classId: classId || null } : s) }));
-  }
-  function loadDemoData() {
-    const demo = buildDemoExpansion(state, email);
-    persist(prev => ({
-      ...prev,
-      students: [...prev.students, ...demo.newStudents],
-      behaviorLog: [...prev.behaviorLog, ...demo.newBehaviorLog],
-      behaviorAssessments: [...prev.behaviorAssessments, ...demo.newBehaviorAssessments],
-      academicAssessments: [...prev.academicAssessments, ...demo.newAcademicAssessments],
-      competitions: [...demo.demoCompetitions, ...prev.competitions.filter(c => !demo.demoCompetitions.some(d => d.monthKey === c.monthKey))],
-    }));
-  }
+  function removeStudent(id) { db(() => dbRemoveStudent(id)); }
+  function assignStudent(studentId, classId) { db(() => dbAssignStudentClass(studentId, classId)); }
+  function loadDemoData() { db(() => dbLoadDemoData(state, session?.user?.id)); }
 
   return (
     <div className="space-y-5">
@@ -1976,21 +2118,22 @@ function AdminClassesTab({ state, persist, email }) {
   );
 }
 
-function AdminTeamTab({ state, persist }) {
+function AdminTeamTab({ state, persist, db }) {
   const [newEmail, setNewEmail] = useState('');
   const [newClassId, setNewClassId] = useState(state.classes[0]?.id || '');
   const entries = Object.entries(state.teacherAssignments);
 
   function addAssignment() {
     if (!newEmail.trim()) return;
-    persist(prev => ({ ...prev, teacherAssignments: { ...prev.teacherAssignments, [newEmail.trim().toLowerCase()]: { isAdmin: false, classId: newClassId || null } } }));
+    db(() => dbAssignTeacher({ email: newEmail.trim().toLowerCase(), isAdmin: false, classId: newClassId }));
     setNewEmail('');
   }
   function updateAssignment(em, patch) {
-    persist(prev => ({ ...prev, teacherAssignments: { ...prev.teacherAssignments, [em]: { ...prev.teacherAssignments[em], ...patch } } }));
+    const current = state.teacherAssignments[em];
+    db(() => dbAssignTeacher({ email: em, isAdmin: patch.isAdmin ?? current.isAdmin, classId: patch.classId !== undefined ? patch.classId : current.classId }));
   }
   function removeAssignment(em) {
-    persist(prev => { const next = { ...prev.teacherAssignments }; delete next[em]; return { ...prev, teacherAssignments: next }; });
+    db(() => dbRemoveTeacher(em));
   }
 
   return (
@@ -2032,7 +2175,7 @@ function AdminTeamTab({ state, persist }) {
   );
 }
 
-function AdminCompetitionTab({ state, persist }) {
+function AdminCompetitionTab({ state, persist, db }) {
   const monthKey = currentMonthKey();
   const live = computeCompetition(state, monthKey);
   const history = [...state.competitions].sort((a, b) => b.monthKey.localeCompare(a.monthKey));
@@ -2040,11 +2183,10 @@ function AdminCompetitionTab({ state, persist }) {
 
   function finalizeMonth() {
     const snapshot = { ...live, closedAt: new Date().toISOString(), winnerClassId: live.results[0]?.classId };
-    persist(prev => ({
-      ...prev,
-      competitions: [snapshot, ...prev.competitions.filter(c => c.monthKey !== monthKey)],
-      notifications: pushNotification(prev, { scope: 'broadcast', message: `\u{1F3C6} ${snapshot.results[0]?.className} won the ${monthLabel(monthKey)} class challenge!` }),
-    }));
+    db(
+      () => dbFinalizeCompetition(snapshot),
+      () => ({ scope: 'broadcast', message: `\u{1F3C6} ${snapshot.results[0]?.className} won the ${monthLabel(monthKey)} class challenge!` })
+    );
   }
 
   return (
