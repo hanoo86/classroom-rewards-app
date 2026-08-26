@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   Users, Brain, Wrench, Heart, Rocket, Award, Shield, Sparkles, CheckCircle2,
   Target, MessageSquare, Plus, X, ChevronRight, TrendingUp,
@@ -6,7 +6,7 @@ import {
   Lightbulb, Bot, Armchair, Code2, Star, Lock, Zap, BarChart3, Gift,
   LayoutGrid, Medal, ClipboardList, LogOut, LogIn,
   Settings, Bell, GraduationCap, ShieldCheck, Download, Printer,
-  CalendarDays, UserPlus, Building2, Percent, ListChecks, Trash2
+  CalendarDays, UserPlus, Building2, Percent, ListChecks, Trash2, Shuffle
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 
@@ -334,6 +334,19 @@ function totalXP(state, studentId) {
   const behaviorTotal = state.behaviorLog.filter(l => l.studentId === studentId).reduce((s, l) => s + l.points, 0);
   return academic + behaviorTotal;
 }
+// Personal week-over-week trend for a single student — used to celebrate
+// individual growth without ranking one student against another.
+function weeklyXPTrend(state, studentId) {
+  const now = Date.now();
+  const day = 86400000;
+  const logs = state.behaviorLog.filter(l => l.studentId === studentId);
+  const thisWeek = logs.filter(l => now - new Date(l.date).getTime() <= 7 * day).reduce((s, l) => s + l.points, 0);
+  const lastWeek = logs.filter(l => {
+    const age = now - new Date(l.date).getTime();
+    return age > 7 * day && age <= 14 * day;
+  }).reduce((s, l) => s + l.points, 0);
+  return { thisWeek, lastWeek, delta: thisWeek - lastWeek };
+}
 function spendableXP(state, studentId) {
   return totalXP(state, studentId) - (state.spentXP[studentId] || 0);
 }
@@ -613,6 +626,36 @@ function Bar({ value, color, height = 8 }) {
   );
 }
 
+// Deterministic per-student color + initials avatar. Gives every student an
+// instantly-recognizable visual identity in rosters and pickers, the way
+// ClassDojo's monster avatars do — without needing any uploaded image or
+// copying its actual mascot art.
+const AVATAR_PALETTE = ['#7C5CFC', '#2F9E8F', '#E0703D', '#D64E7A', '#4C8DE8', '#C9963D', '#5FA867', '#9B6BD6'];
+function avatarColorFor(id) {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+  return AVATAR_PALETTE[hash % AVATAR_PALETTE.length];
+}
+function initialsOf(name) {
+  const parts = (name || '').trim().split(/\s+/);
+  return ((parts[0]?.[0] || '') + (parts[1]?.[0] || '')).toUpperCase() || '?';
+}
+function Avatar({ name, id, size = 32, ring }) {
+  const color = avatarColorFor(id || name || 'x');
+  return (
+    <div
+      className="rounded-full flex items-center justify-center font-black shrink-0"
+      style={{
+        width: size, height: size, fontSize: Math.round(size * 0.38),
+        background: `linear-gradient(135deg, ${color}, ${color}99)`, color: COLORS.onAccent,
+        boxShadow: ring ? `0 0 0 2px ${COLORS.panel}, 0 0 0 4px ${color}` : 'none',
+      }}
+    >
+      {initialsOf(name)}
+    </div>
+  );
+}
+
 function SectionLabel({ icon: Icon, color, children, right }) {
   return (
     <div className="flex items-center justify-between mb-2.5">
@@ -887,15 +930,25 @@ export default function App() {
   const isAdmin = !!myAssignment?.isAdmin;
   const teacherStudents = myClassId ? state.students.filter(s => s.classId === myClassId) : state.students;
 
-  function awardBehavior({ studentId, behaviorId, points, comment }) {
+  function awardBehavior({ studentIds, behaviorId, points, comment }) {
     const behavior = state.behaviors.find(b => b.id === behaviorId);
-    const student = state.students.find(s => s.id === studentId);
+    const ids = Array.isArray(studentIds) ? studentIds : [studentIds];
+    const targetStudents = ids.map(id => state.students.find(s => s.id === id)).filter(Boolean);
+    if (!targetStudents.length) return;
     runDb(
-      () => dbAwardPoints({ studentId, classId: student?.classId, category: behavior.category, name: behavior.name, points, comment, awardedBy: session?.user?.id }),
-      () => ({ scope: 'student', targetId: studentId, message: `\u{1F389} Congratulations! You earned ${points} points for ${behavior.name}.` })
+      () => Promise.all(targetStudents.map(student =>
+        dbAwardPoints({ studentId: student.id, classId: student.classId, category: behavior.category, name: behavior.name, points, comment, awardedBy: session?.user?.id })
+      )),
+      () => targetStudents.length === 1
+        ? { scope: 'student', targetId: targetStudents[0].id, message: `\u{1F389} Congratulations! You earned ${points} points for ${behavior.name}.` }
+        : { scope: 'broadcast', message: `\u{1F389} ${targetStudents.length} students earned ${points} points for ${behavior.name}.` }
     );
-    const theme = ageTheme(student.ageGroup);
-    setToast({ kind: 'xp', title: theme.xpToast(points), body: `${student.name} \u2014 ${behavior.name}` });
+    if (targetStudents.length === 1) {
+      const theme = ageTheme(targetStudents[0].ageGroup);
+      setToast({ kind: 'xp', title: theme.xpToast(points), body: `${targetStudents[0].name} \u2014 ${behavior.name}` });
+    } else {
+      setToast({ kind: 'xp', title: `\u{1F389} +${points} XP awarded!`, body: `${targetStudents.length} students \u2014 ${behavior.name}` });
+    }
     setShowRecognize(false);
   }
 
@@ -995,7 +1048,7 @@ function StudentApp({ state, activeStudentId, setActiveStudentId, persist, setTo
     { id: 'dashboard', label: 'Dashboard', icon: LayoutGrid },
     { id: 'achievements', label: 'Achievements', icon: Trophy },
     { id: 'store', label: 'Reward Store', icon: Gift },
-    { id: 'leaderboard', label: 'Leaderboard', icon: BarChart3 },
+    { id: 'leaderboard', label: 'Spotlight', icon: Sparkles },
     { id: 'competition', label: 'Class Competition', icon: Medal },
     { id: 'notifications', label: unread ? `Alerts (${unread})` : 'Alerts', icon: Bell },
   ];
@@ -1012,9 +1065,7 @@ function StudentApp({ state, activeStudentId, setActiveStudentId, persist, setTo
 
   const sidebarHeader = (
     <div className="flex items-center gap-2.5">
-      <div className="w-10 h-10 rounded-full flex items-center justify-center font-black text-sm shrink-0" style={{ background: `linear-gradient(135deg, ${COLORS.xp}, ${COLORS.robotics})`, color: COLORS.onAccent }}>
-        {student.name.charAt(0)}
-      </div>
+      <Avatar name={student.name} id={student.id} size={40} />
       <div className="min-w-0">
         <div className="text-sm font-bold truncate" style={{ color: COLORS.text }}>{student.name}</div>
         <div className="text-[10.5px] font-semibold flex items-center gap-1" style={{ color: COLORS.textFaint }}>
@@ -1050,7 +1101,7 @@ function StudentApp({ state, activeStudentId, setActiveStudentId, persist, setTo
         {tab === 'dashboard' && <DashboardTab state={state} student={student} theme={theme} lvl={lvl} xp={xp} onReflect={addReflection} />}
         {tab === 'achievements' && <AchievementsTab state={state} student={student} />}
         {tab === 'store' && <StoreTab state={state} student={student} onRedeem={redeem} />}
-        {tab === 'leaderboard' && <LeaderboardTab state={state} />}
+        {tab === 'leaderboard' && <LeaderboardTab state={state} student={student} />}
         {tab === 'competition' && (
           student.classId
             ? <CompetitionBoard title={`\u{1F3C6} Monthly Class Challenge \u2014 ${monthLabel(currentMonthKey())}`} data={computeCompetition(state, currentMonthKey())} />
@@ -1309,9 +1360,8 @@ function StoreTab({ state, student, onRedeem }) {
   );
 }
 
-function LeaderboardTab({ state }) {
-  const ranked = [...state.students].sort((a, b) => totalXP(state, b.id) - totalXP(state, a.id));
-  const top3 = ranked.slice(0, 3);
+function LeaderboardTab({ state, student }) {
+  const trend = weeklyXPTrend(state, student.id);
   const mostImproved = computeMostImproved(state);
   const categories = [
     { label: 'Best Team Player', icon: Users, color: COLORS.behavior, leader: categoryLeader(state, 'Teamwork') },
@@ -1319,44 +1369,54 @@ function LeaderboardTab({ state }) {
     { label: 'Robotics Champion', icon: Bot, color: COLORS.robotics, leader: categoryLeader(state, 'Robotics Behavior') },
     { label: 'Coding Champion', icon: Code2, color: COLORS.coding, leader: academicLeader(state) },
   ];
-  const medalColor = ['#F5C948', '#C7D0DA', '#D89A5E'];
 
   return (
     <div className="space-y-5">
+      {/* Personal growth — about this student's own progress, never ranked
+          against classmates. */}
       <div>
-        <SectionLabel icon={Trophy} color={COLORS.xp}>Top of the Class</SectionLabel>
-        <div className="grid grid-cols-3 gap-2 items-end">
-          {[top3[1], top3[0], top3[2]].map((st, i) => {
-            if (!st) return <div key={i} />;
-            const place = i === 1 ? 1 : i === 0 ? 2 : 3;
-            const h = place === 1 ? 108 : place === 2 ? 84 : 68;
-            return (
-              <div key={st.id} className="flex flex-col items-center gap-1.5">
-                <div className="text-xl">{place === 1 ? '\u{1F947}' : place === 2 ? '\u{1F948}' : '\u{1F949}'}</div>
-                <div className="text-xs font-bold text-center">{st.name}</div>
-                <div className="text-[10px] font-mono" style={{ color: COLORS.xp }}>{totalXP(state, st.id)} XP</div>
-                <div className="w-full rounded-t-lg" style={{ height: h, background: `linear-gradient(180deg, ${medalColor[place - 1]}55, ${medalColor[place - 1]}18)`, border: `1px solid ${medalColor[place - 1]}66` }} />
+        <SectionLabel icon={TrendingUp} color={COLORS.xp}>Your Growth</SectionLabel>
+        <Card style={{ background: `linear-gradient(135deg, ${COLORS.panel}, ${COLORS.panelAlt})` }}>
+          <div className="flex items-center gap-3">
+            <Avatar name={student.name} id={student.id} size={44} ring />
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-bold truncate">{student.name}</div>
+              <div className="text-[11px]" style={{ color: COLORS.textMuted }}>
+                {trend.thisWeek} XP this week
+                {trend.delta > 0 && <span style={{ color: COLORS.success }}> {'\u2191'} {trend.delta} more than last week {'\u{1F389}'}</span>}
+                {trend.delta < 0 && <span style={{ color: COLORS.textFaint }}> {'\u2014'} keep going, every point counts</span>}
+                {trend.delta === 0 && trend.thisWeek > 0 && <span style={{ color: COLORS.textFaint }}> {'\u2014'} steady as last week</span>}
               </div>
-            );
-          })}
-        </div>
+            </div>
+          </div>
+        </Card>
       </div>
 
       {mostImproved && (
         <Card style={{ borderColor: `${COLORS.coding}55` }}>
-          <div className="flex items-center gap-2 text-xs font-bold mb-1" style={{ color: COLORS.coding }}><TrendingUp size={14} /> Most Improved</div>
-          <div className="text-sm font-semibold">{mostImproved.student.name} {'\u2014 great comeback lately!'}</div>
+          <div className="flex items-center gap-2 text-xs font-bold mb-1.5" style={{ color: COLORS.coding }}><TrendingUp size={14} /> Most Improved This Term</div>
+          <div className="flex items-center gap-2">
+            <Avatar name={mostImproved.student.name} id={mostImproved.student.id} size={26} />
+            <div className="text-sm font-semibold">{mostImproved.student.name} {'\u2014 great comeback lately!'}</div>
+          </div>
         </Card>
       )}
 
-      <div className="grid sm:grid-cols-2 gap-3">
-        {categories.map(c => (
-          <Card key={c.label}>
-            <div className="flex items-center gap-1.5 text-[11px] font-bold mb-1.5" style={{ color: c.color }}><c.icon size={13} /> {c.label}</div>
-            <div className="text-sm font-semibold">{c.leader ? c.leader.student.name : '\u2014'}</div>
-            {c.leader && <div className="text-[10.5px] font-mono mt-0.5" style={{ color: COLORS.textMuted }}>{c.leader.pts} pts</div>}
-          </Card>
-        ))}
+      <div>
+        <SectionLabel icon={Sparkles} color={COLORS.xp}>Class Spotlight</SectionLabel>
+        <div className="grid sm:grid-cols-2 gap-3">
+          {categories.map(c => (
+            <Card key={c.label}>
+              <div className="flex items-center gap-1.5 text-[11px] font-bold mb-2" style={{ color: c.color }}><c.icon size={13} /> {c.label}</div>
+              {c.leader ? (
+                <div className="flex items-center gap-2">
+                  <Avatar name={c.leader.student.name} id={c.leader.student.id} size={26} />
+                  <div className="text-sm font-semibold">{c.leader.student.name}</div>
+                </div>
+              ) : <div className="text-sm font-semibold" style={{ color: COLORS.textFaint }}>{'\u2014'}</div>}
+            </Card>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -1428,6 +1488,11 @@ function OverviewTab({ state, persist, classId, db, session }) {
   const [expanded, setExpanded] = useState(null);
   const [noteDraft, setNoteDraft] = useState('');
   const [newStudentName, setNewStudentName] = useState('');
+  const [pickedStudent, setPickedStudent] = useState(null);
+  const [spinning, setSpinning] = useState(false);
+  const [recentlyPicked, setRecentlyPicked] = useState([]);
+  const spinTimer = useRef(null);
+  useEffect(() => () => clearInterval(spinTimer.current), []);
   const roster = [...state.students].sort((a, b) => totalXP(state, b.id) - totalXP(state, a.id));
   const mostImproved = computeMostImproved(state);
   const needsEncouragement = computeNeedsEncouragement(state);
@@ -1445,6 +1510,30 @@ function OverviewTab({ state, persist, classId, db, session }) {
     db(() => dbAddStudent({ name: newStudentName.trim(), ageGroup: 'middle', classId }));
     setNewStudentName('');
   }
+  function pickRandomStudent() {
+    if (spinning || !state.students.length) return;
+    const pool = state.students;
+    let candidates = pool.filter(s => !recentlyPicked.includes(s.id));
+    if (!candidates.length) candidates = pool;
+    const winner = candidates[Math.floor(Math.random() * candidates.length)];
+    setSpinning(true);
+    let ticks = 0;
+    const maxTicks = 14;
+    spinTimer.current = setInterval(() => {
+      ticks++;
+      setPickedStudent(pool[Math.floor(Math.random() * pool.length)]);
+      if (ticks >= maxTicks) {
+        clearInterval(spinTimer.current);
+        setPickedStudent(winner);
+        setSpinning(false);
+        setRecentlyPicked(prev => {
+          const cap = Math.max(1, Math.ceil(pool.length / 2));
+          const next = [...prev, winner.id];
+          return next.length > cap ? next.slice(next.length - cap) : next;
+        });
+      }
+    }, 80);
+  }
 
   return (
     <div className="space-y-5">
@@ -1461,6 +1550,25 @@ function OverviewTab({ state, persist, classId, db, session }) {
           <div className="flex gap-2">
             <input value={newStudentName} onChange={e => setNewStudentName(e.target.value)} placeholder="Student name" style={inputStyle} />
             <button onClick={addStudent} className="text-xs font-bold rounded-lg px-3 shrink-0" style={{ background: COLORS.behavior, color: COLORS.onAccent }}>Add</button>
+          </div>
+        </Card>
+      )}
+
+      {state.students.length > 0 && (
+        <Card style={{ borderColor: `${COLORS.robotics}55` }}>
+          <SectionLabel icon={Shuffle} color={COLORS.robotics}>Pick a Random Student</SectionLabel>
+          <div className="flex items-center gap-3">
+            {pickedStudent ? (
+              <div className="flex items-center gap-2.5 flex-1 min-w-0">
+                <Avatar name={pickedStudent.name} id={pickedStudent.id} size={38} ring={!spinning} />
+                <div className="text-base font-black truncate" style={{ color: spinning ? COLORS.textFaint : COLORS.text }}>{pickedStudent.name}</div>
+              </div>
+            ) : (
+              <div className="text-xs flex-1" style={{ color: COLORS.textFaint }}>Fair, random cold-calling — tap to pick.</div>
+            )}
+            <button onClick={pickRandomStudent} disabled={spinning} className="text-xs font-bold rounded-lg px-3.5 py-2.5 shrink-0 disabled:opacity-60" style={{ background: COLORS.robotics, color: COLORS.onAccent }}>
+              {spinning ? 'Picking\u2026' : pickedStudent ? 'Pick Again' : 'Pick a Student'}
+            </button>
           </div>
         </Card>
       )}
@@ -1492,6 +1600,7 @@ function OverviewTab({ state, persist, classId, db, session }) {
               <button onClick={() => setExpanded(isOpen ? null : st.id)} className="w-full grid grid-cols-[1fr_auto_auto_auto] gap-2 px-4 py-3 items-center text-left transition">
                 <div className="flex items-center gap-2">
                   <ChevronRight size={14} style={{ color: COLORS.textFaint, transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }} />
+                  <Avatar name={st.name} id={st.id} size={26} />
                   <span className="text-sm font-semibold">{st.name}</span>
                 </div>
                 <div className="w-14 text-right text-xs font-mono" style={{ color: COLORS.challenge }}>{lvl.level}</div>
@@ -1897,25 +2006,41 @@ function ChallengesTab({ state, persist, classId, scopedStudents, isAdmin, db, s
 /* ------------------------------- Recognize modal ---------------------------------- */
 
 function RecognizeModal({ state, onClose, onSubmit }) {
-  const [studentId, setStudentId] = useState(state.students[0].id);
+  const [studentIds, setStudentIds] = useState([state.students[0].id]);
   const [behaviorId, setBehaviorId] = useState(state.behaviors[0].id);
   const [points, setPoints] = useState(state.behaviors[0].points);
   const [comment, setComment] = useState('');
   const grouped = CATEGORY_ORDER.map(cat => ({ category: cat, items: state.behaviors.filter(b => b.category === cat) })).filter(g => g.items.length);
+  const allSelected = studentIds.length === state.students.length;
 
   function handleBehaviorChange(id) {
     setBehaviorId(id);
     const b = state.behaviors.find(x => x.id === id);
     if (b) setPoints(b.points);
   }
+  function toggleStudent(id) {
+    setStudentIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  }
+  function toggleAll() {
+    setStudentIds(allSelected ? [] : state.students.map(s => s.id));
+  }
 
   return (
     <ModalShell onClose={onClose} title="Recognize Positive Behavior">
       <div className="space-y-4">
-        <Field label="Student">
-          <select value={studentId} onChange={e => setStudentId(e.target.value)} style={inputStyle}>
-            {state.students.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
+        <Field label={`Students ${studentIds.length ? `(${studentIds.length} selected)` : ''}`}>
+          <div className="rounded-lg border max-h-40 overflow-auto" style={{ borderColor: COLORS.border }}>
+            <button type="button" onClick={toggleAll} className="w-full flex items-center gap-2 px-2.5 py-2 text-xs font-bold border-b" style={{ borderColor: COLORS.border, color: COLORS.xp }}>
+              <input type="checkbox" readOnly checked={allSelected} /> Select all
+            </button>
+            {state.students.map(s => (
+              <label key={s.id} className="flex items-center gap-2 px-2.5 py-1.5 text-sm cursor-pointer border-b last:border-b-0" style={{ borderColor: COLORS.border }}>
+                <input type="checkbox" checked={studentIds.includes(s.id)} onChange={() => toggleStudent(s.id)} />
+                <Avatar name={s.name} id={s.id} size={22} />
+                <span className="min-w-0 truncate">{s.name}</span>
+              </label>
+            ))}
+          </div>
         </Field>
         <Field label="Behavior">
           <select value={behaviorId} onChange={e => handleBehaviorChange(e.target.value)} style={inputStyle}>
@@ -1924,8 +2049,8 @@ function RecognizeModal({ state, onClose, onSubmit }) {
         </Field>
         <Field label="Points"><input type="number" value={points} onChange={e => setPoints(e.target.value)} style={inputStyle} /></Field>
         <Field label="Comment (optional)"><textarea value={comment} onChange={e => setComment(e.target.value)} rows={2} placeholder="You supported your team and helped them solve the problem." style={{ ...inputStyle, resize: 'none' }} /></Field>
-        <button onClick={() => onSubmit({ studentId, behaviorId, points, comment })} className="w-full font-bold text-sm rounded-lg py-2.5" style={{ background: COLORS.xp, color: COLORS.onAccent }}>
-          Award Recognition
+        <button disabled={!studentIds.length} onClick={() => onSubmit({ studentIds, behaviorId, points, comment })} className="w-full font-bold text-sm rounded-lg py-2.5 disabled:opacity-40" style={{ background: COLORS.xp, color: COLORS.onAccent }}>
+          {studentIds.length > 1 ? `Award Recognition to ${studentIds.length} Students` : 'Award Recognition'}
         </button>
       </div>
     </ModalShell>
@@ -2156,7 +2281,10 @@ function AdminClassesTab({ state, persist, email, db, session }) {
         <div className="rounded-2xl border overflow-hidden" style={{ borderColor: COLORS.border }}>
           {state.students.map(s => (
             <div key={s.id} className="flex items-center justify-between gap-2 px-4 py-2.5 border-t first:border-t-0" style={{ borderColor: COLORS.border }}>
-              <span className="text-sm font-medium min-w-0 truncate">{s.name}</span>
+              <div className="flex items-center gap-2.5 min-w-0">
+                <Avatar name={s.name} id={s.id} size={28} />
+                <span className="text-sm font-medium min-w-0 truncate">{s.name}</span>
+              </div>
               <div className="flex items-center gap-2 shrink-0">
                 <select value={s.classId || ''} onChange={e => assignStudent(s.id, e.target.value)} aria-label={`Assign class for ${s.name}`} className="rounded-lg px-2 py-1.5 text-xs font-semibold outline-none border" style={{ background: COLORS.panelAlt, borderColor: COLORS.border, color: COLORS.text }}>
                   <option value="">Unassigned</option>
