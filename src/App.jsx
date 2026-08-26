@@ -738,7 +738,7 @@ function ModalShell({ title, onClose, children }) {
       <div className="rounded-t-2xl sm:rounded-2xl w-full sm:max-w-sm max-h-[85vh] overflow-auto p-5 border" style={{ background: COLORS.panel, borderColor: COLORS.border }}>
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-sm font-bold" style={{ color: COLORS.text }}>{title}</h3>
-          {onClose && <button onClick={onClose} style={{ color: COLORS.textMuted }}><X size={18} /></button>}
+          {onClose && <button onClick={onClose} aria-label="Close" style={{ color: COLORS.textMuted }}><X size={18} /></button>}
         </div>
         {children}
       </div>
@@ -929,7 +929,7 @@ export default function App() {
               )}
             </div>
             {(role === 'teacher' || role === 'admin') && session && (
-              <button onClick={handleSignOut} title={email} className="p-2 rounded-lg border" style={{ borderColor: COLORS.border, color: COLORS.textMuted }}>
+              <button onClick={handleSignOut} title={email} aria-label={`Sign out (${email})`} className="p-2 rounded-lg border" style={{ borderColor: COLORS.border, color: COLORS.textMuted }}>
                 <LogOut size={14} />
               </button>
             )}
@@ -1639,12 +1639,12 @@ function StoreManageTab({ state, persist }) {
         <div className="space-y-2">
           {state.rewards.map(r => (
             <div key={r.id} className="flex items-center gap-3 rounded-xl border px-3.5 py-2.5" style={{ borderColor: COLORS.border, background: COLORS.panel }}>
-              <div className="flex-1">
-                <div className="text-sm font-semibold">{r.name}</div>
-                <div className="text-[11px]" style={{ color: COLORS.textMuted }}>{r.description}</div>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-semibold truncate">{r.name}</div>
+                <div className="text-[11px] truncate" style={{ color: COLORS.textMuted }}>{r.description}</div>
               </div>
-              <input type="number" defaultValue={r.cost} onBlur={e => updateCost(r.id, e.target.value)} className="w-16 text-xs text-right font-mono rounded-md px-2 py-1 border" style={{ background: COLORS.panelSoft, borderColor: COLORS.border, color: COLORS.xp }} />
-              <button onClick={() => removeReward(r.id)} style={{ color: COLORS.textFaint }}><X size={15} /></button>
+              <input type="number" defaultValue={r.cost} onBlur={e => updateCost(r.id, e.target.value)} className="w-16 text-xs text-right font-mono rounded-md px-2 py-1 border shrink-0" style={{ background: COLORS.panelSoft, borderColor: COLORS.border, color: COLORS.xp }} />
+              <button onClick={() => removeReward(r.id)} aria-label={`Delete reward: ${r.name}`} className="shrink-0" style={{ color: COLORS.textFaint }}><X size={15} /></button>
             </div>
           ))}
         </div>
@@ -1854,8 +1854,9 @@ function ChallengesTab({ state, persist, classId, scopedStudents, isAdmin, db, s
         {visible.map(c => (
           <Card key={c.id}>
             <div className="flex items-center justify-between gap-2 mb-2">
-              <div>
-                <div className="text-sm font-bold flex items-center gap-2">{c.name}
+              <div className="min-w-0">
+                <div className="text-sm font-bold flex items-center gap-2">
+                  <span className="truncate">{c.name}</span>
                   <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded-full" style={{ background: c.status === 'active' ? `${COLORS.success}22` : `${COLORS.textFaint}22`, color: c.status === 'active' ? COLORS.success : COLORS.textFaint }}>{c.status}</span>
                 </div>
                 <div className="text-[11px]" style={{ color: COLORS.textMuted }}>{c.description}</div>
@@ -1863,7 +1864,7 @@ function ChallengesTab({ state, persist, classId, scopedStudents, isAdmin, db, s
               </div>
               <div className="flex gap-1.5 shrink-0">
                 <button onClick={() => toggleStatus(c.id)} className="text-[10px] font-bold px-2 py-1 rounded-lg border" style={{ borderColor: COLORS.border, color: COLORS.textMuted }}>{c.status === 'active' ? 'Deactivate' : 'Activate'}</button>
-                <button onClick={() => removeChallenge(c.id)} style={{ color: COLORS.textFaint }}><Trash2 size={14} /></button>
+                <button onClick={() => removeChallenge(c.id)} aria-label={`Delete challenge: ${c.name}`} style={{ color: COLORS.textFaint }}><Trash2 size={14} /></button>
               </div>
             </div>
             {!isAdmin && (
@@ -2089,9 +2090,9 @@ function AdminClassesTab({ state, persist, email, db, session }) {
         <SectionLabel icon={Building2} color={COLORS.robotics}>Classes</SectionLabel>
         <div className="space-y-2">
           {state.classes.map(c => (
-            <div key={c.id} className="flex items-center justify-between rounded-xl border px-3.5 py-2.5" style={{ borderColor: COLORS.border, background: COLORS.panel }}>
-              <div className="text-sm font-semibold">{c.name} <span className="text-[11px] font-normal" style={{ color: COLORS.textFaint }}>({studentsInClass(state, c.id).length} students, {classPointsTotal(state, c.id)} pts)</span></div>
-              <button onClick={() => removeClass(c.id)} style={{ color: COLORS.textFaint }}><Trash2 size={14} /></button>
+            <div key={c.id} className="flex items-center justify-between gap-2 rounded-xl border px-3.5 py-2.5" style={{ borderColor: COLORS.border, background: COLORS.panel }}>
+              <div className="text-sm font-semibold min-w-0 truncate">{c.name} <span className="text-[11px] font-normal" style={{ color: COLORS.textFaint }}>({studentsInClass(state, c.id).length} students, {classPointsTotal(state, c.id)} pts)</span></div>
+              <button onClick={() => removeClass(c.id)} aria-label={`Delete class: ${c.name}`} className="shrink-0" style={{ color: COLORS.textFaint }}><Trash2 size={14} /></button>
             </div>
           ))}
         </div>
@@ -2102,13 +2103,13 @@ function AdminClassesTab({ state, persist, email, db, session }) {
         <div className="rounded-2xl border overflow-hidden" style={{ borderColor: COLORS.border }}>
           {state.students.map(s => (
             <div key={s.id} className="flex items-center justify-between gap-2 px-4 py-2.5 border-t first:border-t-0" style={{ borderColor: COLORS.border }}>
-              <span className="text-sm font-medium">{s.name}</span>
-              <div className="flex items-center gap-2">
-                <select value={s.classId || ''} onChange={e => assignStudent(s.id, e.target.value)} className="rounded-lg px-2 py-1.5 text-xs font-semibold outline-none border" style={{ background: COLORS.panelAlt, borderColor: COLORS.border, color: COLORS.text }}>
+              <span className="text-sm font-medium min-w-0 truncate">{s.name}</span>
+              <div className="flex items-center gap-2 shrink-0">
+                <select value={s.classId || ''} onChange={e => assignStudent(s.id, e.target.value)} aria-label={`Assign class for ${s.name}`} className="rounded-lg px-2 py-1.5 text-xs font-semibold outline-none border" style={{ background: COLORS.panelAlt, borderColor: COLORS.border, color: COLORS.text }}>
                   <option value="">Unassigned</option>
                   {state.classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
-                <button onClick={() => removeStudent(s.id)} style={{ color: COLORS.textFaint }}><Trash2 size={14} /></button>
+                <button onClick={() => removeStudent(s.id)} aria-label={`Delete student: ${s.name}`} style={{ color: COLORS.textFaint }}><Trash2 size={14} /></button>
               </div>
             </div>
           ))}
@@ -2157,15 +2158,15 @@ function AdminTeamTab({ state, persist, db }) {
         <div className="space-y-2">
           {entries.map(([em, a]) => (
             <div key={em} className="flex items-center gap-2 rounded-xl border px-3.5 py-2.5 flex-wrap" style={{ borderColor: COLORS.border, background: COLORS.panel }}>
-              <div className="flex-1 min-w-[140px] text-sm font-semibold">{em}</div>
-              <select value={a.classId || ''} onChange={e => updateAssignment(em, { classId: e.target.value || null })} className="rounded-lg px-2 py-1.5 text-xs font-semibold outline-none border" style={{ background: COLORS.panelAlt, borderColor: COLORS.border, color: COLORS.text }}>
+              <div className="flex-1 min-w-[140px] text-sm font-semibold truncate">{em}</div>
+              <select value={a.classId || ''} onChange={e => updateAssignment(em, { classId: e.target.value || null })} aria-label={`Assign class for ${em}`} className="rounded-lg px-2 py-1.5 text-xs font-semibold outline-none border" style={{ background: COLORS.panelAlt, borderColor: COLORS.border, color: COLORS.text }}>
                 <option value="">No class</option>
                 {state.classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
               <label className="flex items-center gap-1.5 text-[11px] font-bold" style={{ color: a.isAdmin ? COLORS.challenge : COLORS.textFaint }}>
                 <input type="checkbox" checked={!!a.isAdmin} onChange={e => updateAssignment(em, { isAdmin: e.target.checked })} /> Admin
               </label>
-              <button onClick={() => removeAssignment(em)} style={{ color: COLORS.textFaint }}><Trash2 size={14} /></button>
+              <button onClick={() => removeAssignment(em)} aria-label={`Remove team member: ${em}`} style={{ color: COLORS.textFaint }}><Trash2 size={14} /></button>
             </div>
           ))}
           {entries.length === 0 && <div className="text-xs" style={{ color: COLORS.textFaint }}>No team members yet.</div>}
@@ -2238,7 +2239,7 @@ function CompetitionBoard({ title, data, compact }) {
                 <div className="w-9 h-9 rounded-full flex items-center justify-center font-black text-xs mx-auto mb-2" style={{ background: podiumBg[r.rank - 1], color: COLORS.onAccent }}>
                   {r.rank}
                 </div>
-                <div className="text-lg font-black" style={{ color: COLORS.text }}>{r.className}</div>
+                <div className="text-lg font-black truncate" style={{ color: COLORS.text }}>{r.className}</div>
                 <div className="flex items-center justify-center gap-1 text-sm font-bold mt-1" style={{ color: podiumColors[r.rank - 1] }}>
                   <Trophy size={13} /> {r.finalScore}
                 </div>
@@ -2259,20 +2260,22 @@ function CompetitionBoard({ title, data, compact }) {
           </button>
         </Card>
       )}
-      <div className="rounded-2xl border overflow-hidden shadow-sm" style={{ borderColor: COLORS.border }}>
-        <div className="grid grid-cols-[auto_1fr_auto_auto_auto_auto] gap-2 px-3 py-2 text-[9.5px] font-bold uppercase" style={{ background: COLORS.panelAlt, color: COLORS.textFaint }}>
-          <div>#</div><div>Class</div><div className="text-right">Points</div><div className="text-right">Behavior</div><div className="text-right">Academic</div><div className="text-right">Final</div>
-        </div>
-        {data.results.map(r => (
-          <div key={r.classId} className="grid grid-cols-[auto_1fr_auto_auto_auto_auto] gap-2 px-3 py-2.5 text-xs border-t items-center" style={{ borderColor: COLORS.border, background: r.rank === 1 ? `${COLORS.xp}0A` : 'transparent' }}>
-            <div className="font-bold" style={{ color: r.rank <= 3 ? podiumColors[r.rank - 1] : COLORS.textFaint }}>#{r.rank}</div>
-            <div className="font-semibold" style={{ color: COLORS.text }}>{r.className}</div>
-            <div className="text-right font-mono" style={{ color: COLORS.textMuted }}>{r.pointsScore}</div>
-            <div className="text-right font-mono" style={{ color: COLORS.textMuted }}>{r.behaviorScore}%</div>
-            <div className="text-right font-mono" style={{ color: COLORS.textMuted }}>{r.academicScore}%</div>
-            <div className="text-right font-mono font-bold" style={{ color: COLORS.xp }}>{r.finalScore}</div>
+      <div className="rounded-2xl border overflow-hidden shadow-sm table-scroll" style={{ borderColor: COLORS.border }}>
+        <div style={{ minWidth: 480 }}>
+          <div className="grid grid-cols-[auto_1fr_auto_auto_auto_auto] gap-2 px-3 py-2 text-[9.5px] font-bold uppercase" style={{ background: COLORS.panelAlt, color: COLORS.textFaint }}>
+            <div>#</div><div>Class</div><div className="text-right">Points</div><div className="text-right">Behavior</div><div className="text-right">Academic</div><div className="text-right">Final</div>
           </div>
-        ))}
+          {data.results.map(r => (
+            <div key={r.classId} className="grid grid-cols-[auto_1fr_auto_auto_auto_auto] gap-2 px-3 py-2.5 text-xs border-t items-center" style={{ borderColor: COLORS.border, background: r.rank === 1 ? `${COLORS.xp}0A` : 'transparent' }}>
+              <div className="font-bold" style={{ color: r.rank <= 3 ? podiumColors[r.rank - 1] : COLORS.textFaint }}>#{r.rank}</div>
+              <div className="font-semibold truncate" style={{ color: COLORS.text }}>{r.className}</div>
+              <div className="text-right font-mono" style={{ color: COLORS.textMuted }}>{r.pointsScore}</div>
+              <div className="text-right font-mono" style={{ color: COLORS.textMuted }}>{r.behaviorScore}%</div>
+              <div className="text-right font-mono" style={{ color: COLORS.textMuted }}>{r.academicScore}%</div>
+              <div className="text-right font-mono font-bold" style={{ color: COLORS.xp }}>{r.finalScore}</div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
