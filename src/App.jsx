@@ -855,9 +855,89 @@ function TeacherLoginModal({ onClose, onSuccess }) {
 
 /* ------------------------------------ App -------------------------------------- */
 
+function WelcomeScreen({ state, onPickStudent, onPickTeacher }) {
+  const showcase = state.students.slice(0, 6);
+  return (
+    <div className="min-h-screen flex items-center justify-center px-4" style={{ background: `linear-gradient(160deg, ${COLORS.bg}, ${COLORS.panelAlt})` }}>
+      <div className="w-full max-w-lg text-center">
+        <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 animate-pop-in animate-float"
+          style={{ background: `linear-gradient(135deg, ${COLORS.robotics}, ${COLORS.coding})` }}>
+          <Zap size={30} style={{ color: COLORS.onAccent }} strokeWidth={2.5} />
+        </div>
+        <div className="text-2xl font-black tracking-tight animate-fade-up" style={{ animationDelay: '80ms' }}>CS &amp; Robotics Lab</div>
+        <div className="text-xs font-semibold tracking-wide mt-1 mb-6 animate-fade-up" style={{ animationDelay: '140ms', color: COLORS.textFaint }}>TECH JOURNEY PLATFORM</div>
+
+        {showcase.length > 0 && (
+          <div className="flex items-center justify-center -space-x-2 mb-8">
+            {showcase.map((s, i) => (
+              <div key={s.id} className="animate-pop-in" style={{ animationDelay: `${200 + i * 70}ms` }}>
+                <Avatar name={s.name} id={s.id} size={36} ring />
+              </div>
+            ))}
+          </div>
+        )}
+
+        <div className="grid sm:grid-cols-2 gap-4">
+          <button onClick={onPickStudent}
+            className="animate-fade-up rounded-2xl border p-6 text-left transition hover:-translate-y-0.5"
+            style={{ animationDelay: '260ms', background: COLORS.panel, borderColor: COLORS.border }}>
+            <div className="w-11 h-11 rounded-xl flex items-center justify-center mb-3" style={{ background: `${COLORS.xp}18` }}>
+              <UserCircle2 size={22} style={{ color: COLORS.xp }} />
+            </div>
+            <div className="text-sm font-black mb-1">I'm a Student</div>
+            <div className="text-[11.5px]" style={{ color: COLORS.textMuted }}>See my XP, badges, and class competition.</div>
+          </button>
+          <button onClick={onPickTeacher}
+            className="animate-fade-up rounded-2xl border p-6 text-left transition hover:-translate-y-0.5"
+            style={{ animationDelay: '320ms', background: COLORS.panel, borderColor: COLORS.border }}>
+            <div className="w-11 h-11 rounded-xl flex items-center justify-center mb-3" style={{ background: `${COLORS.robotics}18` }}>
+              <GraduationCap size={22} style={{ color: COLORS.robotics }} />
+            </div>
+            <div className="text-sm font-black mb-1">I'm a Teacher</div>
+            <div className="text-[11.5px]" style={{ color: COLORS.textMuted }}>Pick a class and give points.</div>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ClassPickerScreen({ state, classes, onPick }) {
+  return (
+    <div className="max-w-lg mx-auto text-center py-6">
+      <div className="w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-3 animate-pop-in" style={{ background: `${COLORS.robotics}18` }}>
+        <Building2 size={22} style={{ color: COLORS.robotics }} />
+      </div>
+      <div className="text-lg font-black mb-1 animate-fade-up">Which class today?</div>
+      <div className="text-xs mb-6 animate-fade-up" style={{ animationDelay: '60ms', color: COLORS.textMuted }}>Pick a class to start giving points.</div>
+      <div className="grid gap-2.5">
+        {classes.map((c, i) => {
+          const roster = studentsInClass(state, c.id);
+          return (
+            <button key={c.id} onClick={() => onPick(c.id)}
+              className="animate-fade-up flex items-center gap-3 rounded-2xl border p-3.5 text-left transition hover:-translate-y-0.5"
+              style={{ animationDelay: `${i * 70}ms`, background: COLORS.panel, borderColor: COLORS.border }}>
+              <div className="flex -space-x-2 shrink-0">
+                {roster.slice(0, 3).map(s => <Avatar key={s.id} name={s.name} id={s.id} size={30} />)}
+                {roster.length === 0 && <Avatar name={c.name} id={c.id} size={30} />}
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-sm font-black truncate">{c.name}</div>
+                <div className="text-[11px]" style={{ color: COLORS.textFaint }}>{roster.length} student{roster.length === 1 ? '' : 's'}</div>
+              </div>
+              <ChevronRight size={16} style={{ color: COLORS.textFaint }} />
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const [state, setState] = useState(null);
-  const [role, setRole] = useState('student');
+  const [role, setRole] = useState(null);
+  const [quickClassId, setQuickClassId] = useState(null);
   const [activeStudentId, setActiveStudentId] = useState(DEFAULT_STUDENTS[0].id);
   const [toast, setToast] = useState(null);
   const [showRecognize, setShowRecognize] = useState(false);
@@ -908,6 +988,8 @@ export default function App() {
 
   const email = session?.user?.email?.toLowerCase();
   const myAssignment = state && email ? state.teacherAssignments[email] : null;
+  const myClassId = myAssignment?.classId || null;
+  const isAdmin = !!myAssignment?.isAdmin;
 
   // Bootstrap: the very first person to sign in with no admin yet on record becomes admin.
   useEffect(() => {
@@ -920,15 +1002,22 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state && Object.keys(state.teacherAssignments || {}).length, email]);
 
+  // A teacher with exactly one assigned class skips the picker screen —
+  // there's nothing to choose. Admins always get to pick, even with one class.
+  useEffect(() => {
+    if (role !== 'teacher' || !session || quickClassId || isAdmin) return;
+    if (myClassId) setQuickClassId(myClassId);
+  }, [role, session, myClassId, isAdmin, quickClassId]);
+
   if (!state) {
     return <div className="min-h-screen flex items-center justify-center" style={{ background: COLORS.bg }}>
       <Loader2 className="animate-spin" style={{ color: COLORS.robotics }} size={28} />
     </div>;
   }
 
-  const myClassId = myAssignment?.classId || null;
-  const isAdmin = !!myAssignment?.isAdmin;
-  const teacherStudents = myClassId ? state.students.filter(s => s.classId === myClassId) : state.students;
+  const manageableClasses = isAdmin ? state.classes : state.classes.filter(c => c.id === myClassId);
+  const effectiveClassId = quickClassId || (!isAdmin ? myClassId : null);
+  const teacherStudents = effectiveClassId ? state.students.filter(s => s.classId === effectiveClassId) : (isAdmin ? state.students : []);
 
   function awardBehavior({ studentIds, behaviorId, points, comment }) {
     const behavior = state.behaviors.find(b => b.id === behaviorId);
@@ -958,7 +1047,23 @@ export default function App() {
   }
   async function handleSignOut() {
     await supabase.auth.signOut();
-    setRole('student');
+    setQuickClassId(null);
+    setRole(null);
+  }
+  function changeClass() {
+    setQuickClassId(null);
+  }
+
+  if (role === null) {
+    return (
+      <>
+        <Toast toast={toast} />
+        <WelcomeScreen state={state} onPickStudent={() => setRole('student')} onPickTeacher={() => handleRoleClick('teacher')} />
+        {showLogin && (
+          <TeacherLoginModal onClose={() => setShowLogin(false)} onSuccess={() => { setShowLogin(false); setRole('teacher'); }} />
+        )}
+      </>
+    );
   }
 
   return (
@@ -966,7 +1071,7 @@ export default function App() {
       <Toast toast={toast} />
       <header className="sticky top-0 z-40 border-b" style={{ background: `${COLORS.bg}F2`, borderColor: COLORS.border, backdropFilter: 'blur(6px)' }}>
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-2.5">
+          <button onClick={() => setRole(null)} className="flex items-center gap-2.5 text-left">
             <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: `linear-gradient(135deg, ${COLORS.robotics}, ${COLORS.coding})` }}>
               <Zap size={16} style={{ color: COLORS.onAccent }} strokeWidth={2.5} />
             </div>
@@ -974,8 +1079,13 @@ export default function App() {
               <div className="text-[14.5px] font-black tracking-tight leading-none">CS &amp; Robotics Lab</div>
               <div className="text-[9.5px] font-semibold tracking-wide leading-none mt-1" style={{ color: COLORS.textFaint }}>TECH JOURNEY PLATFORM</div>
             </div>
-          </div>
+          </button>
           <div className="flex items-center gap-2">
+            {role === 'teacher' && session && effectiveClassId && isAdmin && (
+              <button onClick={changeClass} className="hidden sm:flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1.5 rounded-lg border" style={{ borderColor: COLORS.border, color: COLORS.textMuted }}>
+                <Building2 size={12} /> {className(state, effectiveClassId)} <ChevronRight size={10} />
+              </button>
+            )}
             <div className="flex items-center gap-1 rounded-lg p-1 border" style={{ background: COLORS.panelAlt, borderColor: COLORS.border }}>
               <button onClick={() => handleRoleClick('student')} className="px-3 py-1.5 rounded-md text-xs font-bold transition"
                 style={role === 'student' ? { background: COLORS.xp, color: COLORS.onAccent } : { color: COLORS.textMuted }}>Student</button>
@@ -1000,15 +1110,24 @@ export default function App() {
           <StudentApp state={state} activeStudentId={activeStudentId} setActiveStudentId={setActiveStudentId} persist={persist} setToast={setToast} db={runDb} />
         )}
         {role === 'teacher' && session && (
-          myClassId || isAdmin ? (
-            <TeacherApp state={state} persist={persist} classId={myClassId} email={email} setToast={setToast} db={runDb} session={session} />
-          ) : (
+          !myClassId && !isAdmin ? (
             <Card>
               <div className="text-sm font-bold mb-1">Waiting for class assignment</div>
               <div className="text-xs" style={{ color: COLORS.textMuted }}>
                 You're signed in as <b>{email}</b> but not yet assigned to a class. Ask your admin to assign you under Admin {'\u2192'} Team.
               </div>
             </Card>
+          ) : !effectiveClassId ? (
+            manageableClasses.length > 0 ? (
+              <ClassPickerScreen state={state} classes={manageableClasses} onPick={setQuickClassId} />
+            ) : (
+              <Card>
+                <div className="text-sm font-bold mb-1">No classes yet</div>
+                <div className="text-xs" style={{ color: COLORS.textMuted }}>Ask your admin to create a class under Admin {'\u2192'} Classes.</div>
+              </Card>
+            )
+          ) : (
+            <TeacherApp state={state} persist={persist} classId={effectiveClassId} email={email} setToast={setToast} db={runDb} session={session} />
           )
         )}
         {role === 'admin' && session && isAdmin && (
@@ -1021,7 +1140,7 @@ export default function App() {
         <TeacherLoginModal onClose={() => setShowLogin(false)} onSuccess={() => { setShowLogin(false); setRole('teacher'); }} />
       )}
 
-      {(role === 'teacher' || role === 'admin') && session && (
+      {((role === 'teacher' && effectiveClassId) || (role === 'admin' && isAdmin)) && session && (
         <button onClick={() => setShowRecognize(true)}
           className="fixed bottom-5 right-5 z-30 rounded-full shadow-2xl flex items-center gap-2 px-4 py-3 font-bold text-xs"
           style={{ background: COLORS.xp, color: COLORS.onAccent }}>
