@@ -252,6 +252,11 @@ async function dbAddStudent({ name, ageGroup, classId }) {
   const { error } = await supabase.from('students').insert({ school_id: SCHOOL_ID, name, age_group: ageGroup, class_id: classId || null });
   if (error) throw error;
 }
+async function dbAddStudentsBulk({ names, ageGroup, classId }) {
+  const rows = names.map(name => ({ school_id: SCHOOL_ID, name, age_group: ageGroup, class_id: classId || null }));
+  const { error } = await supabase.from('students').insert(rows);
+  if (error) throw error;
+}
 async function dbRemoveStudent(id) {
   const { error } = await supabase.from('students').delete().eq('id', id);
   if (error) throw error;
@@ -2032,6 +2037,10 @@ function AdminClassesTab({ state, persist, email, db, session }) {
   const [newStudentName, setNewStudentName] = useState('');
   const [newStudentClassId, setNewStudentClassId] = useState(state.classes[0]?.id || '');
   const [newStudentAge, setNewStudentAge] = useState('middle');
+  const [bulkNames, setBulkNames] = useState('');
+  const [bulkClassId, setBulkClassId] = useState(state.classes[0]?.id || '');
+  const [bulkAge, setBulkAge] = useState('middle');
+  const [bulkBusy, setBulkBusy] = useState(false);
   const alreadyExpanded = state.classes.length > 1 && state.classes.some(c => ['6B', '6C', '7A', '7B', '7C'].includes(c.name));
 
   function addClass() {
@@ -2048,6 +2057,16 @@ function AdminClassesTab({ state, persist, email, db, session }) {
   function removeStudent(id) { db(() => dbRemoveStudent(id)); }
   function assignStudent(studentId, classId) { db(() => dbAssignStudentClass(studentId, classId)); }
   function loadDemoData() { db(() => dbLoadDemoData(state, session?.user?.id)); }
+
+  const bulkList = bulkNames.split('\n').map(n => n.trim()).filter(Boolean);
+  const bulkDupes = bulkList.filter(n => state.students.some(s => s.name.toLowerCase() === n.toLowerCase()));
+  async function addStudentsBulk() {
+    if (!bulkList.length || bulkBusy) return;
+    setBulkBusy(true);
+    const ok = await db(() => dbAddStudentsBulk({ names: bulkList, ageGroup: bulkAge, classId: bulkClassId }));
+    setBulkBusy(false);
+    if (ok) setBulkNames('');
+  }
 
   return (
     <div className="space-y-5">
@@ -2084,6 +2103,40 @@ function AdminClassesTab({ state, persist, email, db, session }) {
           </select>
           <button onClick={addStudent} className="text-xs font-bold rounded-lg px-3 shrink-0" style={{ background: COLORS.behavior, color: COLORS.onAccent }}>Add</button>
         </div>
+      </Card>
+
+      <Card>
+        <SectionLabel icon={Users} color={COLORS.robotics}>Bulk add students</SectionLabel>
+        <div className="text-xs mb-2" style={{ color: COLORS.textMuted }}>
+          Paste one name per line — straight from a spreadsheet or class list works fine.
+        </div>
+        <textarea
+          value={bulkNames}
+          onChange={e => setBulkNames(e.target.value)}
+          placeholder={'Ahmed Al Khalifa\nLayla Hassan\nOmar Youssef'}
+          rows={5}
+          className="w-full text-sm rounded-lg px-3 py-2 border"
+          style={{ background: COLORS.panelSoft, borderColor: COLORS.border, color: COLORS.text, resize: 'vertical' }}
+        />
+        <div className="grid sm:grid-cols-[120px_1fr_auto] gap-2 mt-2">
+          <select value={bulkAge} onChange={e => setBulkAge(e.target.value)} style={inputStyle}>
+            <option value="primary">Primary</option>
+            <option value="middle">Middle</option>
+            <option value="high">High</option>
+          </select>
+          <select value={bulkClassId} onChange={e => setBulkClassId(e.target.value)} style={inputStyle}>
+            <option value="">Unassigned</option>
+            {state.classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          <button onClick={addStudentsBulk} disabled={!bulkList.length || bulkBusy} className="text-xs font-bold rounded-lg px-3 disabled:opacity-40" style={{ background: COLORS.robotics, color: COLORS.onAccent }}>
+            {bulkBusy ? 'Adding…' : `Add ${bulkList.length || ''} student${bulkList.length === 1 ? '' : 's'}`.trim()}
+          </button>
+        </div>
+        {bulkDupes.length > 0 && (
+          <div className="text-[11px] font-semibold mt-2" style={{ color: COLORS.reward }}>
+            Heads up — {bulkDupes.length} name{bulkDupes.length === 1 ? '' : 's'} already exist{bulkDupes.length === 1 ? 's' : ''} in your roster ({bulkDupes.slice(0, 3).join(', ')}{bulkDupes.length > 3 ? ', …' : ''}). They'll be added again as separate students unless you remove them from the list first.
+          </div>
+        )}
       </Card>
 
       <div>
