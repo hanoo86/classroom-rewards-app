@@ -2,5 +2,95 @@
 @tailwind components;
 @tailwind utilities;
 
-html, body, #root { height: 100%; }
-body { margin: 0; }
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ---------------------------------------------------------
+   Accessibility: keyboard focus
+   Show a clear, consistent focus ring ONLY for keyboard/
+   assistive-tech users (mouse clicks won't show it), so the
+   UI stays visually clean while remaining fully navigable
+   by keyboard.
+--------------------------------------------------------- */
+:focus {
+  outline: none;
+}
+
+:focus-visible {
+  outline: 2px solid #7C5CFC;
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* Buttons, links, inputs, and selects all get the same
+   treatment so no interactive element is ever silently
+   unfocusable-looking. */
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid #7C5CFC;
+  outline-offset: 2px;
+}
+
+/* ---------------------------------------------------------
+   Accessibility: reduced motion
+   Respect the user's OS-level preference to minimize
+   animation (vestibular disorders, motion sensitivity).
+--------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ---------------------------------------------------------
+   Consistent hover / active / disabled states for buttons
+   Applied globally so every button behaves the same way,
+   even ones styled with inline `style={{ background: ... }}`
+   that never got an explicit Tailwind `transition` class.
+--------------------------------------------------------- */
+button {
+  transition: filter 0.15s ease, opacity 0.15s ease, transform 0.05s ease,
+    background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+button:not(:disabled) {
+  cursor: pointer;
+}
+
+button:not(:disabled):hover {
+  filter: brightness(1.07);
+}
+
+button:not(:disabled):active {
+  transform: scale(0.97);
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+/* ---------------------------------------------------------
+   Small screen table safety net
+   Any grid/table wrapped in .table-scroll will scroll
+   horizontally instead of squeezing columns unreadably.
+--------------------------------------------------------- */
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
