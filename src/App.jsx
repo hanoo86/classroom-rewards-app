@@ -860,12 +860,10 @@ function WelcomeScreen({ state, onPickStudent, onPickTeacher }) {
   return (
     <div className="min-h-screen flex items-center justify-center px-4" style={{ background: `linear-gradient(160deg, ${COLORS.bg}, ${COLORS.panelAlt})` }}>
       <div className="w-full max-w-lg text-center">
-        <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 animate-pop-in animate-float"
-          style={{ background: `linear-gradient(135deg, ${COLORS.robotics}, ${COLORS.coding})` }}>
-          <Zap size={30} style={{ color: COLORS.onAccent }} strokeWidth={2.5} />
-        </div>
-        <div className="text-2xl font-black tracking-tight animate-fade-up" style={{ animationDelay: '80ms' }}>CS &amp; Robotics Lab</div>
-        <div className="text-xs font-semibold tracking-wide mt-1 mb-6 animate-fade-up" style={{ animationDelay: '140ms', color: COLORS.textFaint }}>TECH JOURNEY PLATFORM</div>
+        <img src="/najm-mascot.png" alt="Najm mascot: a smiling trophy on a stack of books, cheered on by two kids"
+          className="w-48 h-48 sm:w-56 sm:h-56 object-contain mx-auto mb-2 animate-pop-in animate-float" />
+        <div className="text-2xl font-black tracking-tight animate-fade-up" style={{ animationDelay: '80ms' }}>Najm</div>
+        <div className="text-xs font-semibold tracking-wide mt-1 mb-6 animate-fade-up" style={{ animationDelay: '140ms', color: COLORS.textFaint }}>EVERY STUDENT IS A STAR</div>
 
         {showcase.length > 0 && (
           <div className="flex items-center justify-center -space-x-2 mb-8">
@@ -1076,8 +1074,8 @@ export default function App() {
               <Zap size={16} style={{ color: COLORS.onAccent }} strokeWidth={2.5} />
             </div>
             <div>
-              <div className="text-[14.5px] font-black tracking-tight leading-none">CS &amp; Robotics Lab</div>
-              <div className="text-[9.5px] font-semibold tracking-wide leading-none mt-1" style={{ color: COLORS.textFaint }}>TECH JOURNEY PLATFORM</div>
+              <div className="text-[14.5px] font-black tracking-tight leading-none">Najm</div>
+              <div className="text-[9.5px] font-semibold tracking-wide leading-none mt-1" style={{ color: COLORS.textFaint }}>EVERY STUDENT IS A STAR</div>
             </div>
           </button>
           <div className="flex items-center gap-2">
