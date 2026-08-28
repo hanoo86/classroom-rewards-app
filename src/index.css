@@ -1,6 +1,17 @@
+@import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700;800&family=Inter:wght@400;500;600;700;800&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+:root {
+  --font-display: 'Baloo 2', ui-rounded, system-ui, sans-serif;
+  --font-body: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+
+.font-display {
+  font-family: var(--font-display);
+}
 
 html {
   -webkit-text-size-adjust: 100%;
@@ -8,6 +19,7 @@ html {
 
 body {
   margin: 0;
+  font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -24,7 +36,7 @@ body {
 }
 
 :focus-visible {
-  outline: 2px solid #7C5CFC;
+  outline: 2px solid #F0AC2E;
   outline-offset: 2px;
   border-radius: 6px;
 }
@@ -38,7 +50,7 @@ input:focus-visible,
 select:focus-visible,
 textarea:focus-visible,
 [tabindex]:focus-visible {
-  outline: 2px solid #7C5CFC;
+  outline: 2px solid #F0AC2E;
   outline-offset: 2px;
 }
 
@@ -108,6 +120,25 @@ button:disabled {
 }
 .animate-float {
   animation: floatSlow 3.2s ease-in-out infinite;
+}
+
+/* ---------------------------------------------------------
+   Welcome screen night-sky signature: twinkling stars behind
+   the mascot. Each .star-twinkle div is positioned via inline
+   top/left + animationDelay from the component.
+--------------------------------------------------------- */
+@keyframes twinkle {
+  0%, 100% { opacity: 0.15; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.15); }
+}
+.star-twinkle {
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #FFF6DD;
+  box-shadow: 0 0 4px 1px rgba(255, 246, 221, 0.8);
+  animation: twinkle 2.6s ease-in-out infinite;
 }
 
 /* ---------------------------------------------------------
