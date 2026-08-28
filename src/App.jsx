@@ -13,13 +13,13 @@ import { supabase } from './supabaseClient';
 /* ---------------------------------- palette --------------------------------- */
 
 const COLORS = {
-  bg: '#F4F5FB', panel: '#FFFFFF', panelAlt: '#F1EEFE', panelSoft: '#F7F8FC',
-  border: '#E7E8F3', borderStrong: '#D6D8EC',
-  text: '#20223B', textMuted: '#686D8C', textFaint: '#9498B3',
-  xp: '#7C5CFC', behavior: '#22C55E', robotics: '#3B82F6',
-  coding: '#6366F1', challenge: '#F97316', reward: '#F59E0B', success: '#22C55E',
+  bg: '#FAF8F3', panel: '#FFFFFF', panelAlt: '#F5EEDF', panelSoft: '#F8F4EB',
+  border: '#E9E0CC', borderStrong: '#DBCFAF',
+  text: '#221D33', textMuted: '#6E6656', textFaint: '#9C9382',
+  xp: '#9C6209', behavior: '#2F6B5E', robotics: '#3F4C91',
+  coding: '#6C5CE0', challenge: '#C33F27', reward: '#AD5209', success: '#2F6B5E',
   onAccent: '#FFFFFF',
-  sidebarBg: '#1E1B3A', sidebarText: '#B7B4D6', sidebarActive: '#7C5CFC',
+  sidebarBg: '#1E1A38', sidebarText: '#B7ACC9', sidebarActive: '#F0AC2E',
 };
 
 /* ---------------------------------- data ------------------------------------ */
@@ -860,9 +860,18 @@ function WelcomeScreen({ state, onPickStudent, onPickTeacher }) {
   return (
     <div className="min-h-screen flex items-center justify-center px-4" style={{ background: `linear-gradient(160deg, ${COLORS.bg}, ${COLORS.panelAlt})` }}>
       <div className="w-full max-w-lg text-center">
-        <img src="/najm-mascot.png" alt="Najm mascot: a smiling trophy on a stack of books, cheered on by two kids"
-          className="w-48 h-48 sm:w-56 sm:h-56 object-contain mx-auto mb-2 animate-pop-in animate-float" />
-        <div className="text-2xl font-black tracking-tight animate-fade-up" style={{ animationDelay: '80ms' }}>Najm</div>
+        <div className="relative w-48 h-48 sm:w-56 sm:h-56 mx-auto mb-2 rounded-full overflow-hidden animate-pop-in"
+          style={{ background: `radial-gradient(circle at 50% 40%, ${COLORS.sidebarBg}, #100E22)` }}>
+          <div className="star-twinkle" style={{ top: '18%', left: '22%', animationDelay: '0s' }} />
+          <div className="star-twinkle" style={{ top: '30%', left: '72%', animationDelay: '0.6s' }} />
+          <div className="star-twinkle" style={{ top: '68%', left: '18%', animationDelay: '1.1s' }} />
+          <div className="star-twinkle" style={{ top: '78%', left: '68%', animationDelay: '1.7s' }} />
+          <div className="star-twinkle" style={{ top: '12%', left: '58%', animationDelay: '0.3s' }} />
+          <div className="star-twinkle" style={{ top: '55%', left: '85%', animationDelay: '2.1s' }} />
+          <img src="/najm-mascot.png" alt="Najm mascot: a smiling trophy on a stack of books, cheered on by two kids"
+            className="absolute inset-0 w-full h-full object-contain animate-float" />
+        </div>
+        <div className="text-2xl font-display font-black tracking-tight animate-fade-up" style={{ animationDelay: '80ms' }}>Najm</div>
         <div className="text-xs font-semibold tracking-wide mt-1 mb-6 animate-fade-up" style={{ animationDelay: '140ms', color: COLORS.textFaint }}>EVERY STUDENT IS A STAR</div>
 
         {showcase.length > 0 && (
@@ -906,7 +915,7 @@ function ClassPickerScreen({ state, classes, onPick }) {
       <div className="w-12 h-12 rounded-2xl flex items-center justify-center mx-auto mb-3 animate-pop-in" style={{ background: `${COLORS.robotics}18` }}>
         <Building2 size={22} style={{ color: COLORS.robotics }} />
       </div>
-      <div className="text-lg font-black mb-1 animate-fade-up">Which class today?</div>
+      <div className="text-lg font-display font-black mb-1 animate-fade-up">Which class today?</div>
       <div className="text-xs mb-6 animate-fade-up" style={{ animationDelay: '60ms', color: COLORS.textMuted }}>Pick a class to start giving points.</div>
       <div className="grid gap-2.5">
         {classes.map((c, i) => {
@@ -1065,16 +1074,16 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen" style={{ background: COLORS.bg, color: COLORS.text, fontFamily: 'ui-sans-serif, system-ui, -apple-system, sans-serif' }}>
+    <div className="min-h-screen" style={{ background: COLORS.bg, color: COLORS.text, fontFamily: 'var(--font-body)' }}>
       <Toast toast={toast} />
       <header className="sticky top-0 z-40 border-b" style={{ background: `${COLORS.bg}F2`, borderColor: COLORS.border, backdropFilter: 'blur(6px)' }}>
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
           <button onClick={() => setRole(null)} className="flex items-center gap-2.5 text-left">
             <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: `linear-gradient(135deg, ${COLORS.robotics}, ${COLORS.coding})` }}>
-              <Zap size={16} style={{ color: COLORS.onAccent }} strokeWidth={2.5} />
+              <Star size={16} style={{ color: COLORS.onAccent }} strokeWidth={2.5} fill={COLORS.onAccent} />
             </div>
             <div>
-              <div className="text-[14.5px] font-black tracking-tight leading-none">Najm</div>
+              <div className="text-[14.5px] font-display font-black tracking-tight leading-none">Najm</div>
               <div className="text-[9.5px] font-semibold tracking-wide leading-none mt-1" style={{ color: COLORS.textFaint }}>EVERY STUDENT IS A STAR</div>
             </div>
           </button>
@@ -1274,7 +1283,7 @@ function DashboardTab({ state, student, theme, lvl, xp, onReflect }) {
             <div className="text-sm font-bold mt-0.5" style={{ color: COLORS.xp }}>Level {lvl.level} {'\u2014'} {lvl.title}</div>
           </div>
           <div className="text-right shrink-0">
-            <div className="text-xl font-black font-mono" style={{ color: COLORS.xp }}>{xp}</div>
+            <div className="text-xl font-display font-black" style={{ color: COLORS.xp }}>{xp}</div>
             <div className="text-[9.5px] font-bold uppercase" style={{ color: COLORS.textFaint }}>Total XP</div>
           </div>
         </div>
@@ -2242,7 +2251,7 @@ function AdminOverviewTab({ state }) {
       {champion && (
         <Card style={{ background: `linear-gradient(135deg, ${COLORS.panel}, ${COLORS.panelAlt})`, borderColor: `${COLORS.xp}55` }}>
           <div className="flex items-center gap-2 text-xs font-bold mb-1" style={{ color: COLORS.xp }}><Trophy size={14} /> Current Monthly Champion ({monthLabel(comp.monthKey)})</div>
-          <div className="text-xl font-black">{champion.className}</div>
+          <div className="text-xl font-display font-black">{champion.className}</div>
           <div className="text-xs font-mono mt-0.5" style={{ color: COLORS.textMuted }}>Final Score: <b style={{ color: COLORS.xp }}>{champion.finalScore}</b></div>
         </Card>
       )}
@@ -2515,7 +2524,7 @@ function AdminCompetitionTab({ state, persist, db }) {
 
 function CompetitionBoard({ title, data, compact }) {
   const podiumColors = [COLORS.xp, COLORS.textFaint, COLORS.reward];
-  const podiumBg = ['#7C5CFC', '#9CA3AF', '#F59E0B'];
+  const podiumBg = ['#96660B', '#767085', '#8A5A22'];
   const top3 = data.results.slice(0, 3);
   const champion = data.results[0];
   return (
@@ -2551,7 +2560,7 @@ function CompetitionBoard({ title, data, compact }) {
       {champion && !compact && (
         <Card style={{ background: `linear-gradient(135deg, ${COLORS.panel}, ${COLORS.panelAlt})`, borderColor: `${COLORS.xp}55` }}>
           <div className="text-[11px] font-bold uppercase mb-1" style={{ color: COLORS.xp }}>{'\u{1F3C6}'} Class Champion</div>
-          <div className="text-2xl font-black">{champion.className}</div>
+          <div className="text-2xl font-display font-black">{champion.className}</div>
           <div className="text-xs font-mono mt-1" style={{ color: COLORS.textMuted }}>Final Score: <b style={{ color: COLORS.xp }}>{champion.finalScore}</b> {'\u2022'} {champion.studentCount} students</div>
           <button onClick={() => window.print()} className="mt-3 text-[11px] font-bold rounded-lg px-3 py-1.5 flex items-center gap-1.5 w-fit" style={{ background: COLORS.xp, color: COLORS.onAccent }}>
             <Printer size={12} /> Print / Download Certificate
