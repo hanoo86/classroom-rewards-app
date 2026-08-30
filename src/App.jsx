@@ -6,7 +6,7 @@ import {
   Lightbulb, Bot, Armchair, Code2, Star, Lock, Zap, BarChart3, Gift,
   LayoutGrid, Medal, ClipboardList, LogOut, LogIn,
   Settings, Bell, GraduationCap, ShieldCheck, Download, Printer,
-  CalendarDays, UserPlus, Building2, Percent, ListChecks, Trash2, Shuffle
+  CalendarDays, UserPlus, Building2, Percent, ListChecks, Trash2, Shuffle, KeyRound
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 
@@ -176,8 +176,8 @@ function uid(p) { return p + '_' + Math.random().toString(36).slice(2, 9); }
 const SCHOOL_ID = import.meta.env.VITE_SCHOOL_ID;
 
 function rowToBehaviorLog(p) { return { id: p.id, studentId: p.student_id, behaviorId: null, category: p.category, name: p.name, points: p.points, comment: p.comment || '', date: p.created_at }; }
-function rowToStudent(s) { return { id: s.id, name: s.name, ageGroup: s.age_group, classId: s.class_id }; }
-function rowToClass(c) { return { id: c.id, name: c.name }; }
+function rowToStudent(s) { return { id: s.id, name: s.name, ageGroup: s.age_group, classId: s.class_id, pin: s.pin }; }
+function rowToClass(c) { return { id: c.id, name: c.name, classCode: c.class_code, ownerId: c.owner_id }; }
 function rowToBehaviorAssessment(a) { return { id: a.id, studentId: a.student_id, classId: a.class_id, date: a.created_at, ratings: a.ratings, comment: a.comment || '' }; }
 function rowToAcademicAssessment(a) { return { id: a.id, studentId: a.student_id, classId: a.class_id, date: a.created_at, scores: a.scores, comment: a.comment || '' }; }
 function rowToCompetition(c) { return { monthKey: c.month_key, weights: c.weights, results: c.results, winnerClassId: c.winner_class_id, closedAt: c.closed_at }; }
@@ -189,6 +189,11 @@ async function loadState() {
     // eslint-disable-next-line no-console
     console.error('Missing VITE_SCHOOL_ID. Set it to the school row created by the migration script.');
   }
+  // school_data is now one row PER TEACHER (owner_id), not one shared row per
+  // school — so it has to be looked up by the signed-in user's own id, never
+  // by school_id alone (that would match every teacher's row at once).
+  const { data: { user } = {} } = await supabase.auth.getUser();
+
   const [classesR, studentsR, pointsR, bAssessR, aAssessR, compsR, profilesR, redemptionsR, reflectionsR, schoolDataR] = await Promise.all([
     supabase.from('classes').select('*').eq('school_id', SCHOOL_ID),
     supabase.from('students').select('*').eq('school_id', SCHOOL_ID),
@@ -199,7 +204,7 @@ async function loadState() {
     supabase.from('profiles').select('*').eq('school_id', SCHOOL_ID),
     supabase.from('redemptions').select('*').eq('school_id', SCHOOL_ID).order('created_at', { ascending: false }),
     supabase.from('reflections').select('*').eq('school_id', SCHOOL_ID).order('created_at', { ascending: false }),
-    supabase.from('school_data').select('*').eq('school_id', SCHOOL_ID).maybeSingle(),
+    user ? supabase.from('school_data').select('*').eq('owner_id', user.id).maybeSingle() : Promise.resolve({ data: null, error: null }),
   ]);
   [classesR, studentsR, pointsR, bAssessR, aAssessR, compsR, profilesR, redemptionsR, reflectionsR, schoolDataR].forEach(r => {
     if (r.error) console.error('load error:', r.error.message);
@@ -239,7 +244,7 @@ async function saveSchoolData(state) {
     goals: state.goals, notes: state.notes, mission: state.mission, challenges: state.challenges,
     notifications: state.notifications, competitionConfig: state.competitionConfig,
   };
-  const { error } = await supabase.from('school_data').upsert({ school_id: SCHOOL_ID, data: payload, updated_at: new Date().toISOString() });
+  const { error } = await supabase.from('school_data').upsert({ school_id: SCHOOL_ID, data: payload, updated_at: new Date().toISOString() }, { onConflict: 'owner_id' });
   if (error) console.error('save failed:', error.message);
 }
 
@@ -266,8 +271,9 @@ async function dbAssignStudentClass(id, classId) {
   if (error) throw error;
 }
 async function dbAddClass(name) {
-  const { error } = await supabase.from('classes').insert({ school_id: SCHOOL_ID, name });
+  const { data, error } = await supabase.rpc('create_class', { p_name: name });
   if (error) throw error;
+  return data;
 }
 async function dbRemoveClass(id) {
   const { error } = await supabase.from('classes').delete().eq('id', id);
@@ -292,7 +298,7 @@ async function dbFinalizeCompetition(snapshot) {
   const { error } = await supabase.from('competitions').upsert({
     school_id: SCHOOL_ID, month_key: snapshot.monthKey, weights: snapshot.weights, results: snapshot.results,
     winner_class_id: snapshot.winnerClassId, closed_at: snapshot.closedAt,
-  }, { onConflict: 'school_id,month_key' });
+  }, { onConflict: 'owner_id,month_key' });
   if (error) throw error;
 }
 async function dbAssignTeacher({ email, isAdmin, classId }) {
@@ -311,9 +317,58 @@ async function dbRedeem({ studentId, classId, rewardId, rewardName, cost }) {
   const { error } = await supabase.from('redemptions').insert({ school_id: SCHOOL_ID, student_id: studentId, class_id: classId || null, reward_id: rewardId, reward_name: rewardName, cost });
   if (error) throw error;
 }
-async function dbBootstrapAdmin({ userId, email }) {
-  const { error } = await supabase.from('profiles').insert({ id: userId, school_id: SCHOOL_ID, email, is_admin: true });
+async function dbSelfProvisionTeacher() {
+  const { error } = await supabase.rpc('self_provision_teacher');
   if (error) throw error;
+}
+async function dbResetStudentPin(studentId) {
+  const { data, error } = await supabase.rpc('reset_student_pin', { p_student_id: studentId });
+  if (error) throw error;
+  return data;
+}
+
+/* ------------------------- student PIN-login (no Supabase Auth session) ------ */
+
+async function dbFindClassByCode(code) {
+  const { data, error } = await supabase.rpc('find_class_by_code', { p_code: code });
+  if (error) throw error;
+  return data; // null if not found
+}
+async function dbStudentLogin(studentId, pin) {
+  const { data, error } = await supabase.rpc('student_login', { p_student_id: studentId, p_pin: pin });
+  if (error) throw error;
+  return data;
+}
+async function dbStudentRedeem({ studentId, pin, rewardId, rewardName, cost }) {
+  const { error } = await supabase.rpc('student_redeem', { p_student_id: studentId, p_pin: pin, p_reward_id: rewardId, p_reward_name: rewardName, p_cost: cost });
+  if (error) throw error;
+}
+async function dbStudentAddReflection({ studentId, pin, feeling, improvement }) {
+  const { error } = await supabase.rpc('student_add_reflection', { p_student_id: studentId, p_pin: pin, p_feeling: feeling, p_improvement: improvement });
+  if (error) throw error;
+}
+
+// Builds a state object shaped exactly like loadState()'s output, but from
+// the scoped JSON payload returned by student_login() — reuses the same
+// rowTo* mappers so every existing StudentApp component works unmodified.
+function studentPayloadToState(payload) {
+  const spentXP = {};
+  (payload.redemptions || []).forEach(r => { spentXP[r.student_id] = (spentXP[r.student_id] || 0) + r.cost; });
+  const extra = payload.schoolData || {};
+  return {
+    ...defaultState(),
+    ...extra,
+    classes: (payload.classes || []).map(rowToClass),
+    students: (payload.students || []).map(rowToStudent),
+    behaviorLog: (payload.points || []).map(rowToBehaviorLog),
+    behaviorAssessments: (payload.behaviorAssessments || []).map(rowToBehaviorAssessment),
+    academicAssessments: (payload.academicAssessments || []).map(rowToAcademicAssessment),
+    competitions: (payload.competitions || []).map(rowToCompetition),
+    redemptions: (payload.redemptions || []).map(rowToRedemption),
+    reflections: (payload.reflections || []).map(rowToReflection),
+    spentXP,
+    academicPoints: {},
+  };
 }
 
 /* --------------------------------- helpers ----------------------------------- */
@@ -603,7 +658,7 @@ async function dbLoadDemoData(state, userId) {
     ] },
   ];
   for (const comp of demoCompetitions) {
-    const { error } = await supabase.from('competitions').upsert({ school_id: SCHOOL_ID, ...comp }, { onConflict: 'school_id,month_key' });
+    const { error } = await supabase.from('competitions').upsert({ school_id: SCHOOL_ID, ...comp }, { onConflict: 'owner_id,month_key' });
     if (error) throw error;
   }
 }
@@ -818,35 +873,74 @@ function RatingInput({ label, value, onChange, color }) {
   );
 }
 
-/* ------------------------------- Teacher login modal --------------------------- */
+/* ------------------------------- Teacher auth modal ----------------------------- */
 
-function TeacherLoginModal({ onClose, onSuccess }) {
+function TeacherAuthModal({ onClose, onSuccess }) {
+  const [mode, setMode] = useState('signup'); // 'signup' | 'signin'
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [confirmSent, setConfirmSent] = useState(false);
 
-  async function handleLogin() {
-    setLoading(true);
-    setError('');
+  async function handleSignIn() {
+    setLoading(true); setError('');
     const { error: err } = await supabase.auth.signInWithPassword({ email, password });
     setLoading(false);
     if (err) { setError(err.message); return; }
     onSuccess();
   }
+  async function handleSignUp() {
+    if (password.length < 6) { setError('Password must be at least 6 characters.'); return; }
+    setLoading(true); setError('');
+    const { data, error: err } = await supabase.auth.signUp({
+      email, password, options: { data: { full_name: name || undefined } },
+    });
+    setLoading(false);
+    if (err) { setError(err.message); return; }
+    if (data.session) { onSuccess(); return; } // email confirmation disabled — signed in immediately
+    setConfirmSent(true);
+  }
+
+  if (confirmSent) {
+    return (
+      <ModalShell title="Check your email" onClose={onClose}>
+        <div className="text-center py-2 space-y-3">
+          <div className="text-4xl">{'\u{1F4E7}'}</div>
+          <p className="text-sm" style={{ color: COLORS.text }}>
+            We sent a confirmation link to <b>{email}</b>. Click it, then come back and sign in.
+          </p>
+          <button onClick={() => { setConfirmSent(false); setMode('signin'); }} className="text-xs font-bold rounded-lg px-4 py-2" style={{ background: COLORS.robotics, color: COLORS.onAccent }}>
+            Back to Sign In
+          </button>
+        </div>
+      </ModalShell>
+    );
+  }
 
   return (
-    <ModalShell title="Teacher Sign In" onClose={onClose}>
+    <ModalShell title={mode === 'signup' ? 'Create your teacher account' : 'Teacher Sign In'} onClose={onClose}>
+      <div className="flex gap-1 rounded-lg p-1 mb-4 border" style={{ background: COLORS.panelAlt, borderColor: COLORS.border }}>
+        <button onClick={() => { setMode('signup'); setError(''); }} className="flex-1 py-1.5 rounded-md text-xs font-bold"
+          style={mode === 'signup' ? { background: COLORS.robotics, color: COLORS.onAccent } : { color: COLORS.textMuted }}>Sign Up</button>
+        <button onClick={() => { setMode('signin'); setError(''); }} className="flex-1 py-1.5 rounded-md text-xs font-bold"
+          style={mode === 'signin' ? { background: COLORS.robotics, color: COLORS.onAccent } : { color: COLORS.textMuted }}>Sign In</button>
+      </div>
       <div className="space-y-4">
+        {mode === 'signup' && (
+          <Field label="Your name"><input value={name} onChange={e => setName(e.target.value)} placeholder="Ms. Hana" style={inputStyle} /></Field>
+        )}
         <Field label="Email"><input type="email" value={email} onChange={e => setEmail(e.target.value)} style={inputStyle} /></Field>
         <Field label="Password"><input type="password" value={password} onChange={e => setPassword(e.target.value)} style={inputStyle} /></Field>
         {error && <div className="text-xs font-semibold" style={{ color: '#FF6B6B' }}>{error}</div>}
-        <button onClick={handleLogin} disabled={loading} className="w-full font-bold text-sm rounded-lg py-2.5 flex items-center justify-center gap-2 disabled:opacity-50"
+        <button onClick={mode === 'signup' ? handleSignUp : handleSignIn} disabled={loading || !email || !password}
+          className="w-full font-bold text-sm rounded-lg py-2.5 flex items-center justify-center gap-2 disabled:opacity-50"
           style={{ background: COLORS.robotics, color: COLORS.onAccent }}>
-          <LogIn size={15} /> {loading ? 'Signing in\u2026' : 'Sign In'}
+          <LogIn size={15} /> {loading ? 'Please wait\u2026' : mode === 'signup' ? 'Create Account' : 'Sign In'}
         </button>
         <p className="text-[10.5px] text-center" style={{ color: COLORS.textFaint }}>
-          Teacher accounts are created in the Supabase dashboard under Authentication.
+          {mode === 'signup' ? "You'll be able to create your own classes right after this." : 'New here? Switch to Sign Up above.'}
         </p>
       </div>
     </ModalShell>
@@ -855,56 +949,259 @@ function TeacherLoginModal({ onClose, onSuccess }) {
 
 /* ------------------------------------ App -------------------------------------- */
 
-function WelcomeScreen({ state, onPickStudent, onPickTeacher }) {
+const LANDING_FEATURES = [
+  { icon: Sparkles, color: 'xp', title: 'Points that feel like magic', body: 'Recognize good behavior and great work in one tap. Kids watch their star grow in real time.' },
+  { icon: Trophy, color: 'robotics', title: 'Class vs. class competitions', body: 'Run monthly challenges across your sections and crown a champion class, automatically scored.' },
+  { icon: Gift, color: 'reward', title: 'A reward store they actually want', body: 'Students spend earned XP on rewards you set — no spreadsheets, no sticker charts.' },
+  { icon: ShieldCheck, color: 'behavior', title: 'Private by design', body: 'Every class is only visible to the teacher who made it. Students see only their own progress.' },
+];
+
+function LandingPage({ state, onPickStudent, onPickTeacher }) {
   const showcase = state.students.slice(0, 6);
   return (
-    <div className="min-h-screen flex items-center justify-center px-4" style={{ background: `linear-gradient(160deg, ${COLORS.bg}, ${COLORS.panelAlt})` }}>
-      <div className="w-full max-w-lg text-center">
-        <div className="relative w-48 h-48 sm:w-56 sm:h-56 mx-auto mb-2 rounded-full overflow-hidden animate-pop-in"
-          style={{ background: `radial-gradient(circle at 50% 40%, ${COLORS.sidebarBg}, #100E22)` }}>
-          <div className="star-twinkle" style={{ top: '18%', left: '22%', animationDelay: '0s' }} />
-          <div className="star-twinkle" style={{ top: '30%', left: '72%', animationDelay: '0.6s' }} />
-          <div className="star-twinkle" style={{ top: '68%', left: '18%', animationDelay: '1.1s' }} />
-          <div className="star-twinkle" style={{ top: '78%', left: '68%', animationDelay: '1.7s' }} />
-          <div className="star-twinkle" style={{ top: '12%', left: '58%', animationDelay: '0.3s' }} />
-          <div className="star-twinkle" style={{ top: '55%', left: '85%', animationDelay: '2.1s' }} />
-          <img src="/najm-mascot.png" alt="Najm mascot: a smiling trophy on a stack of books, cheered on by two kids"
-            className="absolute inset-0 w-full h-full object-contain animate-float" />
-        </div>
-        <div className="text-2xl font-display font-black tracking-tight animate-fade-up" style={{ animationDelay: '80ms' }}>Najm</div>
-        <div className="text-xs font-semibold tracking-wide mt-1 mb-6 animate-fade-up" style={{ animationDelay: '140ms', color: COLORS.textFaint }}>EVERY STUDENT IS A STAR</div>
-
-        {showcase.length > 0 && (
-          <div className="flex items-center justify-center -space-x-2 mb-8">
-            {showcase.map((s, i) => (
-              <div key={s.id} className="animate-pop-in" style={{ animationDelay: `${200 + i * 70}ms` }}>
-                <Avatar name={s.name} id={s.id} size={36} ring />
-              </div>
-            ))}
+    <div style={{ background: COLORS.bg }}>
+      {/* ---------- Hero ---------- */}
+      <div className="px-4 pt-14 pb-16" style={{ background: `linear-gradient(160deg, ${COLORS.bg}, ${COLORS.panelAlt})` }}>
+        <div className="max-w-3xl mx-auto text-center">
+          <div className="relative w-40 h-40 sm:w-48 sm:h-48 mx-auto mb-4 rounded-full overflow-hidden animate-pop-in"
+            style={{ background: `radial-gradient(circle at 50% 40%, ${COLORS.sidebarBg}, #100E22)` }}>
+            <div className="star-twinkle" style={{ top: '18%', left: '22%', animationDelay: '0s' }} />
+            <div className="star-twinkle" style={{ top: '30%', left: '72%', animationDelay: '0.6s' }} />
+            <div className="star-twinkle" style={{ top: '68%', left: '18%', animationDelay: '1.1s' }} />
+            <div className="star-twinkle" style={{ top: '78%', left: '68%', animationDelay: '1.7s' }} />
+            <div className="star-twinkle" style={{ top: '12%', left: '58%', animationDelay: '0.3s' }} />
+            <div className="star-twinkle" style={{ top: '55%', left: '85%', animationDelay: '2.1s' }} />
+            <img src="/najm-mascot.png" alt="Najm mascot: a smiling trophy on a stack of books, cheered on by two kids"
+              className="absolute inset-0 w-full h-full object-contain animate-float" />
           </div>
-        )}
+          <div className="text-3xl sm:text-4xl font-display font-black tracking-tight animate-fade-up" style={{ animationDelay: '80ms' }}>Najm</div>
+          <div className="text-xs font-semibold tracking-wide mt-1 mb-4 animate-fade-up" style={{ animationDelay: '120ms', color: COLORS.textFaint }}>EVERY STUDENT IS A STAR</div>
+          <p className="text-base sm:text-lg font-medium max-w-xl mx-auto mb-8 animate-fade-up" style={{ animationDelay: '160ms', color: COLORS.textMuted }}>
+            Free, self-serve classroom rewards for any subject. Create your classes in a minute — no IT department required.
+          </p>
 
-        <div className="grid sm:grid-cols-2 gap-4">
-          <button onClick={onPickStudent}
-            className="animate-fade-up rounded-2xl border p-6 text-left transition hover:-translate-y-0.5"
-            style={{ animationDelay: '260ms', background: COLORS.panel, borderColor: COLORS.border }}>
-            <div className="w-11 h-11 rounded-xl flex items-center justify-center mb-3" style={{ background: `${COLORS.xp}18` }}>
-              <UserCircle2 size={22} style={{ color: COLORS.xp }} />
+          {showcase.length > 0 && (
+            <div className="flex items-center justify-center -space-x-2 mb-8 animate-fade-up" style={{ animationDelay: '200ms' }}>
+              {showcase.map((s, i) => (
+                <div key={s.id} className="animate-pop-in" style={{ animationDelay: `${240 + i * 70}ms` }}>
+                  <Avatar name={s.name} id={s.id} size={36} ring />
+                </div>
+              ))}
             </div>
-            <div className="text-sm font-black mb-1">I'm a Student</div>
-            <div className="text-[11.5px]" style={{ color: COLORS.textMuted }}>See my XP, badges, and class competition.</div>
-          </button>
-          <button onClick={onPickTeacher}
-            className="animate-fade-up rounded-2xl border p-6 text-left transition hover:-translate-y-0.5"
-            style={{ animationDelay: '320ms', background: COLORS.panel, borderColor: COLORS.border }}>
-            <div className="w-11 h-11 rounded-xl flex items-center justify-center mb-3" style={{ background: `${COLORS.robotics}18` }}>
-              <GraduationCap size={22} style={{ color: COLORS.robotics }} />
-            </div>
-            <div className="text-sm font-black mb-1">I'm a Teacher</div>
-            <div className="text-[11.5px]" style={{ color: COLORS.textMuted }}>Pick a class and give points.</div>
-          </button>
+          )}
+
+          <div className="grid sm:grid-cols-2 gap-4 text-left max-w-xl mx-auto">
+            <button onClick={onPickTeacher}
+              className="animate-fade-up rounded-2xl border p-6 text-left transition hover:-translate-y-0.5"
+              style={{ animationDelay: '260ms', background: COLORS.panel, borderColor: COLORS.border }}>
+              <div className="w-11 h-11 rounded-xl flex items-center justify-center mb-3" style={{ background: `${COLORS.robotics}18` }}>
+                <GraduationCap size={22} style={{ color: COLORS.robotics }} />
+              </div>
+              <div className="text-sm font-black mb-1">I'm a Teacher</div>
+              <div className="text-[11.5px]" style={{ color: COLORS.textMuted }}>Create a free account and set up your classes.</div>
+            </button>
+            <button onClick={onPickStudent}
+              className="animate-fade-up rounded-2xl border p-6 text-left transition hover:-translate-y-0.5"
+              style={{ animationDelay: '320ms', background: COLORS.panel, borderColor: COLORS.border }}>
+              <div className="w-11 h-11 rounded-xl flex items-center justify-center mb-3" style={{ background: `${COLORS.xp}18` }}>
+                <UserCircle2 size={22} style={{ color: COLORS.xp }} />
+              </div>
+              <div className="text-sm font-black mb-1">I'm a Student</div>
+              <div className="text-[11.5px]" style={{ color: COLORS.textMuted }}>Enter your class code to see your progress.</div>
+            </button>
+          </div>
         </div>
       </div>
+
+      {/* ---------- Feature strip ---------- */}
+      <div className="max-w-5xl mx-auto px-4 py-14">
+        <div className="text-center mb-9">
+          <div className="text-xl sm:text-2xl font-display font-black">Built for teachers who want it to just work</div>
+          <div className="text-sm mt-1.5" style={{ color: COLORS.textMuted }}>No setup calls. No school IT approval. Sign up and start recognizing students today.</div>
+        </div>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {LANDING_FEATURES.map((f, i) => (
+            <div key={f.title} className="animate-fade-up rounded-2xl border p-5" style={{ animationDelay: `${i * 60}ms`, background: COLORS.panel, borderColor: COLORS.border }}>
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center mb-3" style={{ background: `${COLORS[f.color]}18` }}>
+                <f.icon size={19} style={{ color: COLORS[f.color] }} />
+              </div>
+              <div className="text-[13px] font-black mb-1">{f.title}</div>
+              <div className="text-[11.5px] leading-relaxed" style={{ color: COLORS.textMuted }}>{f.body}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ---------- Footer ---------- */}
+      <div className="border-t px-4 py-6" style={{ borderColor: COLORS.border }}>
+        <div className="max-w-5xl mx-auto flex items-center justify-center gap-2 text-[11px]" style={{ color: COLORS.textFaint }}>
+          <Star size={12} fill={COLORS.textFaint} style={{ color: COLORS.textFaint }} />
+          Najm {'\u2014'} Every Student Is a Star
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------- Student class-code entry ---------------------- */
+
+function StudentClassCodeEntry({ onFound, onBack }) {
+  const [code, setCode] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  async function submit() {
+    if (!code.trim() || loading) return;
+    setLoading(true); setError('');
+    try {
+      const found = await dbFindClassByCode(code.trim());
+      setLoading(false);
+      if (!found) { setError("We couldn't find a class with that code. Double-check with your teacher."); return; }
+      onFound(found);
+    } catch (e) {
+      setLoading(false);
+      setError(e.message || 'Something went wrong.');
+    }
+  }
+
+  return (
+    <div className="min-h-screen flex items-center justify-center px-4" style={{ background: `linear-gradient(160deg, ${COLORS.bg}, ${COLORS.panelAlt})` }}>
+      <div className="w-full max-w-sm text-center">
+        <div className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4 animate-pop-in" style={{ background: `${COLORS.xp}18` }}>
+          <KeyRound size={24} style={{ color: COLORS.xp }} />
+        </div>
+        <div className="text-lg font-display font-black mb-1 animate-fade-up">Enter your class code</div>
+        <div className="text-xs mb-6 animate-fade-up" style={{ color: COLORS.textMuted }}>Ask your teacher for the 6-character code.</div>
+        <input
+          value={code}
+          onChange={e => setCode(e.target.value.toUpperCase())}
+          onKeyDown={e => e.key === 'Enter' && submit()}
+          maxLength={6}
+          placeholder="K7QX2M"
+          className="w-full text-center text-2xl font-display font-black tracking-[0.3em] rounded-xl px-3 py-3.5 border outline-none"
+          style={{ background: COLORS.panel, borderColor: COLORS.border, color: COLORS.text }}
+        />
+        {error && <div className="text-xs font-semibold mt-3" style={{ color: '#FF6B6B' }}>{error}</div>}
+        <button onClick={submit} disabled={!code.trim() || loading}
+          className="w-full mt-4 font-bold text-sm rounded-lg py-2.5 disabled:opacity-50"
+          style={{ background: COLORS.xp, color: COLORS.onAccent }}>
+          {loading ? 'Looking\u2026' : 'Continue'}
+        </button>
+        <button onClick={onBack} className="text-xs font-semibold mt-4" style={{ color: COLORS.textFaint }}>{'\u2190'} Back</button>
+      </div>
+    </div>
+  );
+}
+
+function StudentRosterPick({ classInfo, onPick, onBack }) {
+  return (
+    <div className="min-h-screen flex items-center justify-center px-4" style={{ background: `linear-gradient(160deg, ${COLORS.bg}, ${COLORS.panelAlt})` }}>
+      <div className="w-full max-w-lg text-center py-6">
+        <div className="text-lg font-display font-black mb-1 animate-fade-up">{classInfo.name}</div>
+        <div className="text-xs mb-6 animate-fade-up" style={{ color: COLORS.textMuted }}>Tap your name</div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+          {classInfo.students.map((s, i) => (
+            <button key={s.id} onClick={() => onPick(s)}
+              className="animate-fade-up flex flex-col items-center gap-2 rounded-2xl border p-3.5 transition hover:-translate-y-0.5"
+              style={{ animationDelay: `${i * 40}ms`, background: COLORS.panel, borderColor: COLORS.border }}>
+              <Avatar name={s.name} id={s.id} size={44} />
+              <div className="text-xs font-bold truncate w-full">{s.name}</div>
+            </button>
+          ))}
+        </div>
+        <button onClick={onBack} className="text-xs font-semibold mt-6" style={{ color: COLORS.textFaint }}>{'\u2190'} Not my class</button>
+      </div>
+    </div>
+  );
+}
+
+function StudentPinPad({ student, onVerified, onBack }) {
+  const [pin, setPin] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  async function submit(finalPin) {
+    if (finalPin.length !== 4 || loading) return;
+    setLoading(true); setError('');
+    try {
+      const payload = await dbStudentLogin(student.id, finalPin);
+      setLoading(false);
+      if (!payload?.ok) { setError('Wrong PIN — ask your teacher if you forgot it.'); setPin(''); return; }
+      onVerified(payload, finalPin);
+    } catch (e) {
+      setLoading(false);
+      setError(e.message || 'Something went wrong.');
+    }
+  }
+  function tap(d) {
+    if (loading) return;
+    const next = (pin + d).slice(0, 4);
+    setPin(next);
+    setError('');
+    if (next.length === 4) submit(next);
+  }
+  function backspace() { setPin(p => p.slice(0, -1)); setError(''); }
+
+  return (
+    <div className="min-h-screen flex items-center justify-center px-4" style={{ background: `linear-gradient(160deg, ${COLORS.bg}, ${COLORS.panelAlt})` }}>
+      <div className="w-full max-w-xs text-center">
+        <Avatar name={student.name} id={student.id} size={56} />
+        <div className="text-base font-display font-black mt-3 mb-1">{student.name}</div>
+        <div className="text-xs mb-5" style={{ color: COLORS.textMuted }}>Enter your 4-digit PIN</div>
+        <div className="flex items-center justify-center gap-3 mb-6">
+          {[0, 1, 2, 3].map(i => (
+            <div key={i} className="w-3.5 h-3.5 rounded-full border-2" style={{ borderColor: COLORS.xp, background: i < pin.length ? COLORS.xp : 'transparent' }} />
+          ))}
+        </div>
+        {error && <div className="text-xs font-semibold mb-4" style={{ color: '#FF6B6B' }}>{error}</div>}
+        <div className="grid grid-cols-3 gap-2.5">
+          {['1', '2', '3', '4', '5', '6', '7', '8', '9', '', '0', '\u232B'].map((d, i) => d === '' ? <div key={i} /> : (
+            <button key={i} disabled={loading} onClick={() => d === '\u232B' ? backspace() : tap(d)}
+              className="rounded-xl py-3.5 text-lg font-bold border disabled:opacity-50"
+              style={{ background: COLORS.panel, borderColor: COLORS.border, color: COLORS.text }}>
+              {d}
+            </button>
+          ))}
+        </div>
+        <button onClick={onBack} className="text-xs font-semibold mt-6" style={{ color: COLORS.textFaint }}>{'\u2190'} Not me</button>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------- Create first class ----------------------------- */
+
+function CreateFirstClassScreen({ onCreate }) {
+  const [name, setName] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  async function submit() {
+    if (!name.trim() || loading) return;
+    setLoading(true); setError('');
+    try {
+      await onCreate(name.trim());
+    } catch (e) {
+      setError(e.message || 'Something went wrong.');
+    }
+    setLoading(false);
+  }
+
+  return (
+    <div className="max-w-sm mx-auto text-center py-10">
+      <div className="w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4 animate-pop-in" style={{ background: `${COLORS.robotics}18` }}>
+        <Building2 size={24} style={{ color: COLORS.robotics }} />
+      </div>
+      <div className="text-lg font-display font-black mb-1 animate-fade-up">Create your first class</div>
+      <div className="text-xs mb-6 animate-fade-up" style={{ color: COLORS.textMuted }}>You'll get a class code to share with students.</div>
+      <input value={name} onChange={e => setName(e.target.value)} onKeyDown={e => e.key === 'Enter' && submit()}
+        placeholder="e.g. Grade 7 Robotics" style={inputStyle} className="text-center" />
+      {error && <div className="text-xs font-semibold mt-3" style={{ color: '#FF6B6B' }}>{error}</div>}
+      <button onClick={submit} disabled={!name.trim() || loading}
+        className="w-full mt-4 font-bold text-sm rounded-lg py-2.5 disabled:opacity-50"
+        style={{ background: COLORS.robotics, color: COLORS.onAccent }}>
+        {loading ? 'Creating\u2026' : 'Create Class'}
+      </button>
     </div>
   );
 }
@@ -950,7 +1247,16 @@ export default function App() {
   const [showRecognize, setShowRecognize] = useState(false);
   const [session, setSession] = useState(null);
   const [showLogin, setShowLogin] = useState(false);
+  const [provisioning, setProvisioning] = useState(false);
 
+  // Student PIN-login flow (no Supabase Auth session — see supabase RPCs
+  // find_class_by_code / student_login / student_redeem / student_add_reflection).
+  const [studentStep, setStudentStep] = useState('code'); // 'code' | 'roster' | 'pin' | 'in'
+  const [studentClassInfo, setStudentClassInfo] = useState(null);
+  const [studentPicked, setStudentPicked] = useState(null);
+  const [studentSession, setStudentSession] = useState(null); // { state, studentId, pin }
+
+  useEffect(() => { document.title = 'Najm \u2014 Every Student Is a Star'; }, []);
   useEffect(() => { loadState().then(setState); }, []);
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
@@ -995,26 +1301,25 @@ export default function App() {
 
   const email = session?.user?.email?.toLowerCase();
   const myAssignment = state && email ? state.teacherAssignments[email] : null;
-  const myClassId = myAssignment?.classId || null;
   const isAdmin = !!myAssignment?.isAdmin;
+  const hasProfile = !!myAssignment;
 
-  // Bootstrap: the very first person to sign in with no admin yet on record becomes admin.
+  // Any signed-in user with no profile row yet self-provisions as a regular
+  // teacher (never admin — see the one-time SQL step to promote yourself).
+  // Row Level Security means `state.classes` already only contains classes
+  // this person owns (or every class, if they're admin) — nothing further
+  // to filter client-side.
   useEffect(() => {
-    if (!state || !email || !session) return;
-    if (state.teacherAssignments[email]) return;
-    const hasAdmin = Object.values(state.teacherAssignments).some(a => a.isAdmin);
-    if (!hasAdmin) {
-      dbBootstrapAdmin({ userId: session.user.id, email }).then(refresh).catch(e => console.error(e));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state && Object.keys(state.teacherAssignments || {}).length, email]);
+    if (!state || !email || !session || hasProfile || provisioning) return;
+    setProvisioning(true);
+    dbSelfProvisionTeacher().then(refresh).catch(e => console.error(e)).finally(() => setProvisioning(false));
+  }, [state, email, session, hasProfile, provisioning, refresh]);
 
-  // A teacher with exactly one assigned class skips the picker screen —
-  // there's nothing to choose. Admins always get to pick, even with one class.
+  // A teacher with exactly one class skips the picker screen — nothing to choose.
   useEffect(() => {
-    if (role !== 'teacher' || !session || quickClassId || isAdmin) return;
-    if (myClassId) setQuickClassId(myClassId);
-  }, [role, session, myClassId, isAdmin, quickClassId]);
+    if (role !== 'teacher' || !session || quickClassId) return;
+    if (state && state.classes.length === 1) setQuickClassId(state.classes[0].id);
+  }, [role, session, state, quickClassId]);
 
   if (!state) {
     return <div className="min-h-screen flex items-center justify-center" style={{ background: COLORS.bg }}>
@@ -1022,9 +1327,38 @@ export default function App() {
     </div>;
   }
 
-  const manageableClasses = isAdmin ? state.classes : state.classes.filter(c => c.id === myClassId);
-  const effectiveClassId = quickClassId || (!isAdmin ? myClassId : null);
+  const manageableClasses = state.classes; // already RLS-scoped: mine, or everyone's if admin
+  const effectiveClassId = quickClassId || null;
   const teacherStudents = effectiveClassId ? state.students.filter(s => s.classId === effectiveClassId) : (isAdmin ? state.students : []);
+
+  async function createFirstClass(name) {
+    const created = await dbAddClass(name);
+    await refresh();
+    if (created?.id) setQuickClassId(created.id);
+  }
+
+  function studentRedeem(reward) {
+    if (!studentSession) return;
+    const { studentId, pin } = studentSession;
+    dbStudentRedeem({ studentId, pin, rewardId: reward.id, rewardName: reward.name, cost: reward.cost })
+      .then(() => dbStudentLogin(studentId, pin)).then(payload => {
+        if (payload?.ok) setStudentSession({ state: studentPayloadToState(payload), studentId, pin });
+      }).catch(e => setToast({ kind: 'reflect', title: 'Could not redeem', body: e.message }));
+    setToast({ kind: 'reward', title: '\u{1F381} Reward redeemed!', body: reward.name });
+  }
+  function studentAddReflection(feeling, improvement) {
+    if (!studentSession) return;
+    const { studentId, pin } = studentSession;
+    dbStudentAddReflection({ studentId, pin, feeling, improvement })
+      .then(() => dbStudentLogin(studentId, pin)).then(payload => {
+        if (payload?.ok) setStudentSession({ state: studentPayloadToState(payload), studentId, pin });
+      }).catch(e => setToast({ kind: 'reflect', title: 'Could not save', body: e.message }));
+    setToast({ kind: 'reflect', title: 'Reflection saved', body: 'Thanks for thinking about your lesson today.' });
+  }
+  function exitStudentFlow() {
+    setStudentStep('code'); setStudentClassInfo(null); setStudentPicked(null); setStudentSession(null);
+    setRole(null);
+  }
 
   function awardBehavior({ studentIds, behaviorId, points, comment }) {
     const behavior = state.behaviors.find(b => b.id === behaviorId);
@@ -1065,9 +1399,42 @@ export default function App() {
     return (
       <>
         <Toast toast={toast} />
-        <WelcomeScreen state={state} onPickStudent={() => setRole('student')} onPickTeacher={() => handleRoleClick('teacher')} />
+        <LandingPage state={state} onPickStudent={() => setRole('student')} onPickTeacher={() => handleRoleClick('teacher')} />
         {showLogin && (
-          <TeacherLoginModal onClose={() => setShowLogin(false)} onSuccess={() => { setShowLogin(false); setRole('teacher'); }} />
+          <TeacherAuthModal onClose={() => setShowLogin(false)} onSuccess={() => { setShowLogin(false); setRole('teacher'); }} />
+        )}
+      </>
+    );
+  }
+
+  // ------------------------------ Student PIN-login flow -----------------------
+  if (role === 'student' && studentStep !== 'in') {
+    return (
+      <>
+        <Toast toast={toast} />
+        {studentStep === 'code' && (
+          <StudentClassCodeEntry
+            onBack={() => setRole(null)}
+            onFound={info => { setStudentClassInfo(info); setStudentStep('roster'); }}
+          />
+        )}
+        {studentStep === 'roster' && studentClassInfo && (
+          <StudentRosterPick
+            classInfo={studentClassInfo}
+            onBack={() => { setStudentClassInfo(null); setStudentStep('code'); }}
+            onPick={s => { setStudentPicked(s); setStudentStep('pin'); }}
+          />
+        )}
+        {studentStep === 'pin' && studentPicked && (
+          <StudentPinPad
+            student={studentPicked}
+            onBack={() => { setStudentPicked(null); setStudentStep('roster'); }}
+            onVerified={(payload, pin) => {
+              setStudentSession({ state: studentPayloadToState(payload), studentId: studentPicked.id, pin });
+              setActiveStudentId(studentPicked.id);
+              setStudentStep('in');
+            }}
+          />
         )}
       </>
     );
@@ -1078,7 +1445,7 @@ export default function App() {
       <Toast toast={toast} />
       <header className="sticky top-0 z-40 border-b" style={{ background: `${COLORS.bg}F2`, borderColor: COLORS.border, backdropFilter: 'blur(6px)' }}>
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between gap-3 flex-wrap">
-          <button onClick={() => setRole(null)} className="flex items-center gap-2.5 text-left">
+          <button onClick={() => (role === 'student' ? exitStudentFlow() : setRole(null))} className="flex items-center gap-2.5 text-left">
             <div className="w-8 h-8 rounded-xl flex items-center justify-center" style={{ background: `linear-gradient(135deg, ${COLORS.robotics}, ${COLORS.coding})` }}>
               <Star size={16} style={{ color: COLORS.onAccent }} strokeWidth={2.5} fill={COLORS.onAccent} />
             </div>
@@ -1088,23 +1455,28 @@ export default function App() {
             </div>
           </button>
           <div className="flex items-center gap-2">
-            {role === 'teacher' && session && effectiveClassId && isAdmin && (
+            {role === 'teacher' && session && effectiveClassId && manageableClasses.length > 1 && (
               <button onClick={changeClass} className="hidden sm:flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1.5 rounded-lg border" style={{ borderColor: COLORS.border, color: COLORS.textMuted }}>
                 <Building2 size={12} /> {className(state, effectiveClassId)} <ChevronRight size={10} />
               </button>
             )}
-            <div className="flex items-center gap-1 rounded-lg p-1 border" style={{ background: COLORS.panelAlt, borderColor: COLORS.border }}>
-              <button onClick={() => handleRoleClick('student')} className="px-3 py-1.5 rounded-md text-xs font-bold transition"
-                style={role === 'student' ? { background: COLORS.xp, color: COLORS.onAccent } : { color: COLORS.textMuted }}>Student</button>
-              <button onClick={() => handleRoleClick('teacher')} className="px-3 py-1.5 rounded-md text-xs font-bold transition"
-                style={role === 'teacher' ? { background: COLORS.robotics, color: COLORS.onAccent } : { color: COLORS.textMuted }}>Teacher</button>
-              {session && isAdmin && (
-                <button onClick={() => handleRoleClick('admin')} className="px-3 py-1.5 rounded-md text-xs font-bold transition"
-                  style={role === 'admin' ? { background: COLORS.challenge, color: COLORS.onAccent } : { color: COLORS.textMuted }}>Admin</button>
-              )}
-            </div>
+            {role !== 'student' && (
+              <div className="flex items-center gap-1 rounded-lg p-1 border" style={{ background: COLORS.panelAlt, borderColor: COLORS.border }}>
+                <button onClick={() => handleRoleClick('teacher')} className="px-3 py-1.5 rounded-md text-xs font-bold transition"
+                  style={role === 'teacher' ? { background: COLORS.robotics, color: COLORS.onAccent } : { color: COLORS.textMuted }}>Teacher</button>
+                {session && isAdmin && (
+                  <button onClick={() => handleRoleClick('admin')} className="px-3 py-1.5 rounded-md text-xs font-bold transition"
+                    style={role === 'admin' ? { background: COLORS.challenge, color: COLORS.onAccent } : { color: COLORS.textMuted }}>Admin</button>
+                )}
+              </div>
+            )}
             {(role === 'teacher' || role === 'admin') && session && (
               <button onClick={handleSignOut} title={email} aria-label={`Sign out (${email})`} className="p-2 rounded-lg border" style={{ borderColor: COLORS.border, color: COLORS.textMuted }}>
+                <LogOut size={14} />
+              </button>
+            )}
+            {role === 'student' && (
+              <button onClick={exitStudentFlow} className="p-2 rounded-lg border" style={{ borderColor: COLORS.border, color: COLORS.textMuted }} aria-label="Log out">
                 <LogOut size={14} />
               </button>
             )}
@@ -1113,25 +1485,19 @@ export default function App() {
       </header>
 
       <main className="max-w-7xl mx-auto px-4 py-5">
-        {role === 'student' && (
-          <StudentApp state={state} activeStudentId={activeStudentId} setActiveStudentId={setActiveStudentId} persist={persist} setToast={setToast} db={runDb} />
+        {role === 'student' && studentSession && (
+          <StudentApp state={studentSession.state} activeStudentId={studentSession.studentId} setActiveStudentId={() => {}} lockedStudent
+            persist={() => {}} setToast={setToast} db={async fn => { await fn(); return true; }}
+            onRedeem={studentRedeem} onReflect={studentAddReflection} />
         )}
         {role === 'teacher' && session && (
-          !myClassId && !isAdmin ? (
-            <Card>
-              <div className="text-sm font-bold mb-1">Waiting for class assignment</div>
-              <div className="text-xs" style={{ color: COLORS.textMuted }}>
-                You're signed in as <b>{email}</b> but not yet assigned to a class. Ask your admin to assign you under Admin {'\u2192'} Team.
-              </div>
-            </Card>
+          provisioning ? (
+            <div className="flex justify-center py-10"><Loader2 className="animate-spin" style={{ color: COLORS.robotics }} size={24} /></div>
           ) : !effectiveClassId ? (
             manageableClasses.length > 0 ? (
               <ClassPickerScreen state={state} classes={manageableClasses} onPick={setQuickClassId} />
             ) : (
-              <Card>
-                <div className="text-sm font-bold mb-1">No classes yet</div>
-                <div className="text-xs" style={{ color: COLORS.textMuted }}>Ask your admin to create a class under Admin {'\u2192'} Classes.</div>
-              </Card>
+              <CreateFirstClassScreen onCreate={createFirstClass} />
             )
           ) : (
             <TeacherApp state={state} persist={persist} classId={effectiveClassId} email={email} setToast={setToast} db={runDb} session={session} />
@@ -1144,7 +1510,7 @@ export default function App() {
 
       {showRecognize && <RecognizeModal state={{ ...state, students: teacherStudents.length ? teacherStudents : state.students }} onClose={() => setShowRecognize(false)} onSubmit={awardBehavior} />}
       {showLogin && (
-        <TeacherLoginModal onClose={() => setShowLogin(false)} onSuccess={() => { setShowLogin(false); setRole('teacher'); }} />
+        <TeacherAuthModal onClose={() => setShowLogin(false)} onSuccess={() => { setShowLogin(false); setRole('teacher'); }} />
       )}
 
       {((role === 'teacher' && effectiveClassId) || (role === 'admin' && isAdmin)) && session && (
@@ -1160,7 +1526,7 @@ export default function App() {
 
 /* --------------------------------- Student App ---------------------------------- */
 
-function StudentApp({ state, activeStudentId, setActiveStudentId, persist, setToast, db }) {
+function StudentApp({ state, activeStudentId, setActiveStudentId, persist, setToast, db, lockedStudent, onRedeem, onReflect }) {
   const [tab, setTab] = useState('dashboard');
   const student = state.students.find(s => s.id === activeStudentId) || state.students[0];
   const theme = ageTheme(student.ageGroup);
@@ -1180,11 +1546,13 @@ function StudentApp({ state, activeStudentId, setActiveStudentId, persist, setTo
   ];
 
   function addReflection(feeling, improvement) {
+    if (onReflect) { onReflect(feeling, improvement); return; }
     db(() => dbAddReflection({ studentId: student.id, feeling, improvement }));
     setToast({ kind: 'reflect', title: 'Reflection saved', body: 'Thanks for thinking about your lesson today.' });
   }
   function redeem(reward) {
     if (spendableXP(state, student.id) < reward.cost) return;
+    if (onRedeem) { onRedeem(reward); return; }
     db(() => dbRedeem({ studentId: student.id, classId: student.classId, rewardId: reward.id, rewardName: reward.name, cost: reward.cost }));
     setToast({ kind: 'reward', title: '\u{1F381} Reward redeemed!', body: reward.name });
   }
@@ -1208,11 +1576,17 @@ function StudentApp({ state, activeStudentId, setActiveStudentId, persist, setTo
       <div className="flex-1 min-w-0 space-y-5">
         <div className="flex items-center gap-2 flex-wrap">
           <UserCircle2 size={17} style={{ color: COLORS.textMuted }} />
-          <select value={student.id} onChange={e => setActiveStudentId(e.target.value)}
-            className="rounded-lg px-2.5 py-1.5 text-sm font-semibold outline-none border"
-            style={{ background: COLORS.panelAlt, borderColor: COLORS.border, color: COLORS.text }}>
-            {state.students.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-          </select>
+          {lockedStudent ? (
+            <span className="rounded-lg px-2.5 py-1.5 text-sm font-semibold border" style={{ background: COLORS.panelAlt, borderColor: COLORS.border, color: COLORS.text }}>
+              {student.name}
+            </span>
+          ) : (
+            <select value={student.id} onChange={e => setActiveStudentId(e.target.value)}
+              className="rounded-lg px-2.5 py-1.5 text-sm font-semibold outline-none border"
+              style={{ background: COLORS.panelAlt, borderColor: COLORS.border, color: COLORS.text }}>
+              {state.students.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          )}
           <span className="text-[10px] font-bold uppercase px-2 py-1 rounded-full" style={{ background: COLORS.panelAlt, color: COLORS.textFaint }}>
             {student.ageGroup} view
           </span>
@@ -2242,7 +2616,7 @@ function AdminOverviewTab({ state }) {
       <div className="flex gap-2 flex-wrap">
         <StatChip icon={Users} label="Students" value={state.students.length} color={COLORS.robotics} />
         <StatChip icon={Building2} label="Classes" value={state.classes.length} color={COLORS.coding} />
-        <StatChip icon={UserPlus} label="Teachers" value={Object.values(state.teacherAssignments).filter(a => a.classId).length} color={COLORS.behavior} />
+        <StatChip icon={UserPlus} label="Teachers" value={Object.values(state.teacherAssignments).length} color={COLORS.behavior} />
         <StatChip icon={Zap} label="Total Points" value={totalPoints} color={COLORS.xp} />
         <StatChip icon={Heart} label="Avg Behavior" value={`${avgBehavior}%`} color={COLORS.behavior} />
         <StatChip icon={GraduationCap} label="Avg Academic" value={`${avgAcademic}%`} color={COLORS.coding} />
@@ -2395,7 +2769,10 @@ function AdminClassesTab({ state, persist, email, db, session }) {
         <div className="space-y-2">
           {state.classes.map(c => (
             <div key={c.id} className="flex items-center justify-between gap-2 rounded-xl border px-3.5 py-2.5" style={{ borderColor: COLORS.border, background: COLORS.panel }}>
-              <div className="text-sm font-semibold min-w-0 truncate">{c.name} <span className="text-[11px] font-normal" style={{ color: COLORS.textFaint }}>({studentsInClass(state, c.id).length} students, {classPointsTotal(state, c.id)} pts)</span></div>
+              <div className="min-w-0">
+                <div className="text-sm font-semibold min-w-0 truncate">{c.name} <span className="text-[11px] font-normal" style={{ color: COLORS.textFaint }}>({studentsInClass(state, c.id).length} students, {classPointsTotal(state, c.id)} pts)</span></div>
+                {c.classCode && <ClassCodeBadge code={c.classCode} />}
+              </div>
               <button onClick={() => removeClass(c.id)} aria-label={`Delete class: ${c.name}`} className="shrink-0" style={{ color: COLORS.textFaint }}><Trash2 size={14} /></button>
             </div>
           ))}
@@ -2412,6 +2789,7 @@ function AdminClassesTab({ state, persist, email, db, session }) {
                 <span className="text-sm font-medium min-w-0 truncate">{s.name}</span>
               </div>
               <div className="flex items-center gap-2 shrink-0">
+                <StudentPinBadge student={s} db={db} />
                 <select value={s.classId || ''} onChange={e => assignStudent(s.id, e.target.value)} aria-label={`Assign class for ${s.name}`} className="rounded-lg px-2 py-1.5 text-xs font-semibold outline-none border" style={{ background: COLORS.panelAlt, borderColor: COLORS.border, color: COLORS.text }}>
                   <option value="">Unassigned</option>
                   {state.classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -2426,19 +2804,43 @@ function AdminClassesTab({ state, persist, email, db, session }) {
   );
 }
 
+function ClassCodeBadge({ code }) {
+  const [copied, setCopied] = useState(false);
+  function copy() {
+    navigator.clipboard?.writeText(code).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); });
+  }
+  return (
+    <button onClick={copy} className="mt-1 flex items-center gap-1.5 text-[11px] font-bold rounded-md px-2 py-0.5 border w-fit"
+      style={{ borderColor: COLORS.border, color: COLORS.xp, background: `${COLORS.xp}0F` }}>
+      <KeyRound size={11} /> {code} {copied ? '\u2713 copied' : ''}
+    </button>
+  );
+}
+
+function StudentPinBadge({ student, db }) {
+  const [revealed, setRevealed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  async function reset() {
+    setBusy(true);
+    await db(() => dbResetStudentPin(student.id));
+    setBusy(false);
+    setRevealed(true);
+  }
+  return (
+    <button onClick={() => revealed ? reset() : setRevealed(true)} disabled={busy}
+      className="text-[10.5px] font-bold rounded-md px-2 py-1 border disabled:opacity-50"
+      title={revealed ? 'Click to generate a new PIN' : 'Click to reveal PIN'}
+      style={{ borderColor: COLORS.border, color: COLORS.textMuted, background: COLORS.panelAlt }}>
+      {revealed ? `PIN ${student.pin} \u21BB` : 'Show PIN'}
+    </button>
+  );
+}
+
 function AdminTeamTab({ state, persist, db }) {
-  const [newEmail, setNewEmail] = useState('');
-  const [newClassId, setNewClassId] = useState(state.classes[0]?.id || '');
   const entries = Object.entries(state.teacherAssignments);
 
-  function addAssignment() {
-    if (!newEmail.trim()) return;
-    db(() => dbAssignTeacher({ email: newEmail.trim().toLowerCase(), isAdmin: false, classId: newClassId }));
-    setNewEmail('');
-  }
-  function updateAssignment(em, patch) {
-    const current = state.teacherAssignments[em];
-    db(() => dbAssignTeacher({ email: em, isAdmin: patch.isAdmin ?? current.isAdmin, classId: patch.classId !== undefined ? patch.classId : current.classId }));
+  function setAdmin(em, isAdmin) {
+    db(() => dbAssignTeacher({ email: em, isAdmin, classId: null }));
   }
   function removeAssignment(em) {
     db(() => dbRemoveTeacher(em));
@@ -2446,37 +2848,25 @@ function AdminTeamTab({ state, persist, db }) {
 
   return (
     <div className="space-y-5">
-      <Card>
-        <SectionLabel icon={UserPlus} color={COLORS.robotics}>Assign a teacher</SectionLabel>
-        <div className="text-[11px] mb-2" style={{ color: COLORS.textFaint }}>
-          Enter the exact email of a Supabase Auth user (create the login in Supabase first). They'll get this class automatically the next time they sign in.
-        </div>
-        <div className="grid sm:grid-cols-[1fr_140px_auto] gap-2">
-          <input value={newEmail} onChange={e => setNewEmail(e.target.value)} placeholder="teacher@school.com" style={inputStyle} />
-          <select value={newClassId} onChange={e => setNewClassId(e.target.value)} style={inputStyle}>
-            {state.classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-          <button onClick={addAssignment} className="text-xs font-bold rounded-lg px-3" style={{ background: COLORS.robotics, color: COLORS.onAccent }}>Assign</button>
+      <Card style={{ borderColor: `${COLORS.robotics}55` }}>
+        <div className="text-xs" style={{ color: COLORS.textMuted }}>
+          Teachers now sign themselves up from the home screen and create their own classes — nothing to set up here. This list is every teacher who has signed in at least once, across the whole platform. Toggle <b>Admin</b> to give someone super-admin access (they'll see every class from every teacher).
         </div>
       </Card>
 
       <div>
-        <SectionLabel icon={ShieldCheck} color={COLORS.challenge}>Team</SectionLabel>
+        <SectionLabel icon={ShieldCheck} color={COLORS.challenge}>Team ({entries.length})</SectionLabel>
         <div className="space-y-2">
           {entries.map(([em, a]) => (
             <div key={em} className="flex items-center gap-2 rounded-xl border px-3.5 py-2.5 flex-wrap" style={{ borderColor: COLORS.border, background: COLORS.panel }}>
               <div className="flex-1 min-w-[140px] text-sm font-semibold truncate">{em}</div>
-              <select value={a.classId || ''} onChange={e => updateAssignment(em, { classId: e.target.value || null })} aria-label={`Assign class for ${em}`} className="rounded-lg px-2 py-1.5 text-xs font-semibold outline-none border" style={{ background: COLORS.panelAlt, borderColor: COLORS.border, color: COLORS.text }}>
-                <option value="">No class</option>
-                {state.classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-              </select>
               <label className="flex items-center gap-1.5 text-[11px] font-bold" style={{ color: a.isAdmin ? COLORS.challenge : COLORS.textFaint }}>
-                <input type="checkbox" checked={!!a.isAdmin} onChange={e => updateAssignment(em, { isAdmin: e.target.checked })} /> Admin
+                <input type="checkbox" checked={!!a.isAdmin} onChange={e => setAdmin(em, e.target.checked)} /> Admin
               </label>
               <button onClick={() => removeAssignment(em)} aria-label={`Remove team member: ${em}`} style={{ color: COLORS.textFaint }}><Trash2 size={14} /></button>
             </div>
           ))}
-          {entries.length === 0 && <div className="text-xs" style={{ color: COLORS.textFaint }}>No team members yet.</div>}
+          {entries.length === 0 && <div className="text-xs" style={{ color: COLORS.textFaint }}>No teachers have signed up yet.</div>}
         </div>
       </div>
     </div>
