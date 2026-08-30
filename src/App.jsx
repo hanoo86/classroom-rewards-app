@@ -6,20 +6,20 @@ import {
   Lightbulb, Bot, Armchair, Code2, Star, Lock, Zap, BarChart3, Gift,
   LayoutGrid, Medal, ClipboardList, LogOut, LogIn,
   Settings, Bell, GraduationCap, ShieldCheck, Download, Printer,
-  CalendarDays, UserPlus, Building2, Percent, ListChecks, Trash2, Shuffle, KeyRound
+  CalendarDays, UserPlus, Building2, Percent, ListChecks, Trash2, Shuffle, KeyRound, ChevronDown, Quote
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 
 /* ---------------------------------- palette --------------------------------- */
 
 const COLORS = {
-  bg: '#FAF8F3', panel: '#FFFFFF', panelAlt: '#F5EEDF', panelSoft: '#F8F4EB',
-  border: '#E9E0CC', borderStrong: '#DBCFAF',
-  text: '#221D33', textMuted: '#6E6656', textFaint: '#9C9382',
-  xp: '#9C6209', behavior: '#2F6B5E', robotics: '#3F4C91',
-  coding: '#6C5CE0', challenge: '#C33F27', reward: '#AD5209', success: '#2F6B5E',
+  bg: '#F5F8FE', panel: '#FFFFFF', panelAlt: '#EAF0FE', panelSoft: '#F1F5FD',
+  border: '#DCE4F7', borderStrong: '#C3D0F2',
+  text: '#161B3A', textMuted: '#585F86', textFaint: '#8790B8',
+  xp: '#9C6209', behavior: '#166B54', robotics: '#2A4FD6',
+  coding: '#6D4FE0', challenge: '#C33327', reward: '#B3600A', success: '#166B54',
   onAccent: '#FFFFFF',
-  sidebarBg: '#1E1A38', sidebarText: '#B7ACC9', sidebarActive: '#F0AC2E',
+  sidebarBg: '#121A3D', sidebarText: '#AAB4E0', sidebarActive: '#F0AC2E',
 };
 
 /* ---------------------------------- data ------------------------------------ */
@@ -950,86 +950,156 @@ function TeacherAuthModal({ onClose, onSuccess }) {
 /* ------------------------------------ App -------------------------------------- */
 
 const LANDING_FEATURES = [
-  { icon: Sparkles, color: 'xp', title: 'Points that feel like magic', body: 'Recognize good behavior and great work in one tap. Kids watch their star grow in real time.' },
-  { icon: Trophy, color: 'robotics', title: 'Class vs. class competitions', body: 'Run monthly challenges across your sections and crown a champion class, automatically scored.' },
-  { icon: Gift, color: 'reward', title: 'A reward store they actually want', body: 'Students spend earned XP on rewards you set — no spreadsheets, no sticker charts.' },
-  { icon: ShieldCheck, color: 'behavior', title: 'Private by design', body: 'Every class is only visible to the teacher who made it. Students see only their own progress.' },
+  { icon: Sparkles, color: 'xp', title: 'Recognize students in one tap', body: 'Award points for behavior and great work \u2014 to one student or a whole group at once. Kids watch their star grow in real time.' },
+  { icon: Gift, color: 'reward', title: 'A reward marketplace they\u2019ll love', body: 'Students spend earned XP on rewards you choose. No spreadsheets, no sticker charts, no paper tickets to track.' },
+  { icon: Trophy, color: 'robotics', title: 'Class vs. class competitions', body: 'Run monthly challenges across your own sections and crown a champion class \u2014 scored automatically.' },
+  { icon: ShieldCheck, color: 'behavior', title: 'Private by design', body: 'Every class is only visible to the teacher who made it. Students see only their own progress, never a classmate\u2019s.' },
 ];
+
+// NOTE for Hana: these are placeholder quotes so the section isn't empty —
+// swap in real reviews from actual teachers once you have a few. Don't
+// publish this section with made-up names/quotes attached to real people.
+const LANDING_TESTIMONIALS = [
+  { name: 'Your teacher\u2019s name here', role: 'Placeholder \u2014 swap for a real quote', quote: 'Once you have a few teachers using Najm, replace this with something they actually said about it.' },
+  { name: 'Another teacher', role: 'Placeholder', quote: 'This section is built and ready \u2014 it just needs real testimonials before it goes live.' },
+  { name: 'A third teacher', role: 'Placeholder', quote: 'Three quotes usually feels full without being repetitive. Keep them short.' },
+];
+
+const LANDING_FAQ = [
+  { q: 'What is Najm?', a: 'Najm ("star" in Arabic) is a free classroom rewards and behavior-tracking app. Teachers recognize good behavior and great work with points; students track their own growth, earn badges, and spend points in a reward store.' },
+  { q: 'How do students log in?', a: 'No email needed. Students enter their teacher\u2019s class code, tap their name from the roster, and enter their private 4-digit PIN.' },
+  { q: 'Is my class visible to other teachers?', a: 'No. Every class belongs to the teacher who created it \u2014 other teachers who sign up can\u2019t see your classes, students, or points.' },
+  { q: 'Can a student see another student\u2019s points?', a: 'No. Once signed in, a student only ever sees their own dashboard.' },
+  { q: 'How is Najm different from other classroom reward apps?', a: 'Najm is built to be self-serve from day one \u2014 any teacher can sign up and be running in a couple of minutes, with class-vs-class competitions and a growth-focused "Spotlight" view instead of a public ranked leaderboard.' },
+  { q: 'What does it cost?', a: 'Signing up and creating classes doesn\u2019t require a payment method.' },
+];
+
+function RoleTile({ icon: Icon, color, label, sub, onClick }) {
+  return (
+    <button onClick={onClick} className="animate-fade-up flex flex-col items-center gap-2 group">
+      <div className="w-16 h-16 rounded-2xl flex items-center justify-center border transition group-hover:-translate-y-1"
+        style={{ background: COLORS.panel, borderColor: COLORS.border, boxShadow: '0 2px 10px rgba(20,30,80,0.06)' }}>
+        <Icon size={26} style={{ color }} />
+      </div>
+      <div className="text-xs font-black">{label}</div>
+      {sub && <div className="text-[10px] max-w-[110px] text-center leading-tight" style={{ color: COLORS.textFaint }}>{sub}</div>}
+    </button>
+  );
+}
+
+function FaqItem({ q, a, open, onToggle }) {
+  return (
+    <div className="border-b" style={{ borderColor: COLORS.border }}>
+      <button onClick={onToggle} className="w-full flex items-center justify-between gap-3 py-4 text-left">
+        <span className="text-[13.5px] font-bold">{q}</span>
+        <ChevronDown size={16} style={{ color: COLORS.textFaint, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} />
+      </button>
+      {open && <p className="pb-4 text-[12.5px] leading-relaxed" style={{ color: COLORS.textMuted }}>{a}</p>}
+    </div>
+  );
+}
 
 function LandingPage({ state, onPickStudent, onPickTeacher }) {
   const showcase = state.students.slice(0, 6);
+  const [openFaq, setOpenFaq] = useState(0);
+
   return (
     <div style={{ background: COLORS.bg }}>
       {/* ---------- Hero ---------- */}
-      <div className="px-4 pt-14 pb-16" style={{ background: `linear-gradient(160deg, ${COLORS.bg}, ${COLORS.panelAlt})` }}>
+      <div className="px-4 pt-14 pb-12" style={{ background: `linear-gradient(160deg, ${COLORS.panelAlt}, ${COLORS.bg})` }}>
         <div className="max-w-3xl mx-auto text-center">
-          <div className="relative w-40 h-40 sm:w-48 sm:h-48 mx-auto mb-4 rounded-full overflow-hidden animate-pop-in"
-            style={{ background: `radial-gradient(circle at 50% 40%, ${COLORS.sidebarBg}, #100E22)` }}>
-            <div className="star-twinkle" style={{ top: '18%', left: '22%', animationDelay: '0s' }} />
-            <div className="star-twinkle" style={{ top: '30%', left: '72%', animationDelay: '0.6s' }} />
-            <div className="star-twinkle" style={{ top: '68%', left: '18%', animationDelay: '1.1s' }} />
-            <div className="star-twinkle" style={{ top: '78%', left: '68%', animationDelay: '1.7s' }} />
-            <div className="star-twinkle" style={{ top: '12%', left: '58%', animationDelay: '0.3s' }} />
-            <div className="star-twinkle" style={{ top: '55%', left: '85%', animationDelay: '2.1s' }} />
+          <div className="relative w-16 h-16 mx-auto mb-4 rounded-full overflow-hidden animate-pop-in"
+            style={{ background: `radial-gradient(circle at 50% 40%, ${COLORS.sidebarBg}, #0A0E22)` }}>
+            <div className="star-twinkle" style={{ top: '20%', left: '25%', animationDelay: '0s' }} />
+            <div className="star-twinkle" style={{ top: '65%', left: '70%', animationDelay: '0.8s' }} />
+            <div className="star-twinkle" style={{ top: '25%', left: '68%', animationDelay: '1.4s' }} />
             <img src="/najm-mascot.png" alt="Najm mascot: a smiling trophy on a stack of books, cheered on by two kids"
               className="absolute inset-0 w-full h-full object-contain animate-float" />
           </div>
-          <div className="text-3xl sm:text-4xl font-display font-black tracking-tight animate-fade-up" style={{ animationDelay: '80ms' }}>Najm</div>
-          <div className="text-xs font-semibold tracking-wide mt-1 mb-4 animate-fade-up" style={{ animationDelay: '120ms', color: COLORS.textFaint }}>EVERY STUDENT IS A STAR</div>
-          <p className="text-base sm:text-lg font-medium max-w-xl mx-auto mb-8 animate-fade-up" style={{ animationDelay: '160ms', color: COLORS.textMuted }}>
-            Free, self-serve classroom rewards for any subject. Create your classes in a minute — no IT department required.
+          <div className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 mb-5 text-[10.5px] font-black tracking-wide animate-fade-up" style={{ background: `${COLORS.robotics}14`, color: COLORS.robotics }}>
+            <Star size={11} fill={COLORS.robotics} /> EVERY STUDENT IS A STAR
+          </div>
+          <h1 className="text-3xl sm:text-5xl font-display font-black tracking-tight leading-[1.1] mb-4 animate-fade-up" style={{ animationDelay: '60ms' }}>
+            A classroom reward system<br className="hidden sm:block" /> students actually <span style={{ color: COLORS.xp }}>care about</span>
+          </h1>
+          <p className="text-base sm:text-lg font-medium max-w-xl mx-auto mb-9 animate-fade-up" style={{ animationDelay: '120ms', color: COLORS.textMuted }}>
+            Add your students in seconds, share a simple class code, and motivate behavior by rewarding points in real time.
           </p>
 
+          <div className="text-[11px] font-black uppercase tracking-wide mb-4 animate-fade-up" style={{ animationDelay: '160ms', color: COLORS.textFaint }}>Get started as a{'\u2026'}</div>
+          <div className="flex items-center justify-center gap-6 sm:gap-10 mb-7">
+            <RoleTile icon={GraduationCap} color={COLORS.robotics} label="Teacher" sub="Create classes & give points" onClick={onPickTeacher} />
+            <RoleTile icon={UserCircle2} color={COLORS.xp} label="Student" sub="See my progress" onClick={onPickStudent} />
+          </div>
+          <button onClick={onPickTeacher} className="animate-fade-up font-black text-sm rounded-full px-8 py-3 shadow-lg" style={{ animationDelay: '200ms', background: COLORS.robotics, color: COLORS.onAccent, boxShadow: `0 8px 24px ${COLORS.robotics}40` }}>
+            Get Started
+          </button>
+
           {showcase.length > 0 && (
-            <div className="flex items-center justify-center -space-x-2 mb-8 animate-fade-up" style={{ animationDelay: '200ms' }}>
+            <div className="flex items-center justify-center -space-x-2 mt-9 animate-fade-up" style={{ animationDelay: '260ms' }}>
               {showcase.map((s, i) => (
-                <div key={s.id} className="animate-pop-in" style={{ animationDelay: `${240 + i * 70}ms` }}>
-                  <Avatar name={s.name} id={s.id} size={36} ring />
+                <div key={s.id} className="animate-pop-in" style={{ animationDelay: `${300 + i * 70}ms` }}>
+                  <Avatar name={s.name} id={s.id} size={34} ring />
                 </div>
               ))}
             </div>
           )}
+        </div>
+      </div>
 
-          <div className="grid sm:grid-cols-2 gap-4 text-left max-w-xl mx-auto">
-            <button onClick={onPickTeacher}
-              className="animate-fade-up rounded-2xl border p-6 text-left transition hover:-translate-y-0.5"
-              style={{ animationDelay: '260ms', background: COLORS.panel, borderColor: COLORS.border }}>
-              <div className="w-11 h-11 rounded-xl flex items-center justify-center mb-3" style={{ background: `${COLORS.robotics}18` }}>
-                <GraduationCap size={22} style={{ color: COLORS.robotics }} />
+      {/* ---------- Feature blocks (alternating) ---------- */}
+      <div className="max-w-4xl mx-auto px-4 py-16 space-y-14">
+        {LANDING_FEATURES.map((f, i) => (
+          <div key={f.title} className={`animate-fade-up flex flex-col sm:flex-row items-center gap-6 ${i % 2 ? 'sm:flex-row-reverse' : ''}`} style={{ animationDelay: `${i * 60}ms` }}>
+            <div className="w-28 h-28 sm:w-36 sm:h-36 rounded-3xl flex items-center justify-center shrink-0" style={{ background: `${COLORS[f.color]}14` }}>
+              <f.icon size={44} style={{ color: COLORS[f.color] }} strokeWidth={1.6} />
+            </div>
+            <div className="text-center sm:text-left">
+              <div className="text-lg sm:text-xl font-display font-black mb-1.5">{f.title}</div>
+              <div className="text-sm leading-relaxed max-w-md" style={{ color: COLORS.textMuted }}>{f.body}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* ---------- Testimonials ---------- */}
+      <div className="py-16 px-4" style={{ background: COLORS.panelAlt }}>
+        <div className="max-w-5xl mx-auto">
+          <div className="text-center mb-9">
+            <div className="text-xl sm:text-2xl font-display font-black">Kind Words from Our Teachers</div>
+          </div>
+          <div className="grid sm:grid-cols-3 gap-4">
+            {LANDING_TESTIMONIALS.map((t, i) => (
+              <div key={i} className="animate-fade-up rounded-2xl p-5 border" style={{ animationDelay: `${i * 60}ms`, background: COLORS.panel, borderColor: COLORS.border }}>
+                <Quote size={18} style={{ color: COLORS.robotics }} className="mb-2" />
+                <p className="text-[12.5px] leading-relaxed mb-3" style={{ color: COLORS.text }}>{t.quote}</p>
+                <div className="text-xs font-black">{t.name}</div>
+                <div className="text-[10.5px]" style={{ color: COLORS.textFaint }}>{t.role}</div>
               </div>
-              <div className="text-sm font-black mb-1">I'm a Teacher</div>
-              <div className="text-[11.5px]" style={{ color: COLORS.textMuted }}>Create a free account and set up your classes.</div>
-            </button>
-            <button onClick={onPickStudent}
-              className="animate-fade-up rounded-2xl border p-6 text-left transition hover:-translate-y-0.5"
-              style={{ animationDelay: '320ms', background: COLORS.panel, borderColor: COLORS.border }}>
-              <div className="w-11 h-11 rounded-xl flex items-center justify-center mb-3" style={{ background: `${COLORS.xp}18` }}>
-                <UserCircle2 size={22} style={{ color: COLORS.xp }} />
-              </div>
-              <div className="text-sm font-black mb-1">I'm a Student</div>
-              <div className="text-[11.5px]" style={{ color: COLORS.textMuted }}>Enter your class code to see your progress.</div>
-            </button>
+            ))}
           </div>
         </div>
       </div>
 
-      {/* ---------- Feature strip ---------- */}
-      <div className="max-w-5xl mx-auto px-4 py-14">
-        <div className="text-center mb-9">
-          <div className="text-xl sm:text-2xl font-display font-black">Built for teachers who want it to just work</div>
-          <div className="text-sm mt-1.5" style={{ color: COLORS.textMuted }}>No setup calls. No school IT approval. Sign up and start recognizing students today.</div>
+      {/* ---------- FAQ ---------- */}
+      <div className="max-w-2xl mx-auto px-4 py-16">
+        <div className="text-center mb-6">
+          <div className="text-xl sm:text-2xl font-display font-black">Answers to Your Questions</div>
         </div>
-        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {LANDING_FEATURES.map((f, i) => (
-            <div key={f.title} className="animate-fade-up rounded-2xl border p-5" style={{ animationDelay: `${i * 60}ms`, background: COLORS.panel, borderColor: COLORS.border }}>
-              <div className="w-10 h-10 rounded-xl flex items-center justify-center mb-3" style={{ background: `${COLORS[f.color]}18` }}>
-                <f.icon size={19} style={{ color: COLORS[f.color] }} />
-              </div>
-              <div className="text-[13px] font-black mb-1">{f.title}</div>
-              <div className="text-[11.5px] leading-relaxed" style={{ color: COLORS.textMuted }}>{f.body}</div>
-            </div>
+        <div>
+          {LANDING_FAQ.map((item, i) => (
+            <FaqItem key={item.q} q={item.q} a={item.a} open={openFaq === i} onToggle={() => setOpenFaq(openFaq === i ? -1 : i)} />
           ))}
         </div>
+      </div>
+
+      {/* ---------- Bottom CTA ---------- */}
+      <div className="px-4 py-16 text-center" style={{ background: `linear-gradient(135deg, ${COLORS.robotics}, ${COLORS.coding})` }}>
+        <div className="text-2xl sm:text-3xl font-display font-black mb-2" style={{ color: COLORS.onAccent }}>Get started with Najm today</div>
+        <p className="text-sm mb-7" style={{ color: `${COLORS.onAccent}CC` }}>Create your free teacher account and set up your first class in minutes.</p>
+        <button onClick={onPickTeacher} className="font-black text-sm rounded-full px-8 py-3" style={{ background: COLORS.onAccent, color: COLORS.robotics }}>
+          Get Started
+        </button>
       </div>
 
       {/* ---------- Footer ---------- */}
@@ -1360,24 +1430,34 @@ export default function App() {
     setRole(null);
   }
 
-  function awardBehavior({ studentIds, behaviorId, points, comment }) {
-    const behavior = state.behaviors.find(b => b.id === behaviorId);
+  function awardBehavior({ studentIds, behaviorIds, pointsOverride, comment }) {
+    const behaviors = behaviorIds.map(id => state.behaviors.find(b => b.id === id)).filter(Boolean);
     const ids = Array.isArray(studentIds) ? studentIds : [studentIds];
     const targetStudents = ids.map(id => state.students.find(s => s.id === id)).filter(Boolean);
-    if (!targetStudents.length) return;
+    if (!targetStudents.length || !behaviors.length) return;
+    const singleBehavior = behaviors.length === 1;
+    const behaviorNames = behaviors.map(b => b.name).join(', ');
+    const totalPoints = behaviors.reduce((sum, b) => sum + Number((singleBehavior && pointsOverride !== '' && pointsOverride != null) ? pointsOverride : b.points), 0);
+
+    const jobs = [];
+    targetStudents.forEach(student => {
+      behaviors.forEach(behavior => {
+        const pts = singleBehavior && pointsOverride !== '' && pointsOverride != null ? Number(pointsOverride) : behavior.points;
+        jobs.push(dbAwardPoints({ studentId: student.id, classId: student.classId, category: behavior.category, name: behavior.name, points: pts, comment, awardedBy: session?.user?.id }));
+      });
+    });
+
     runDb(
-      () => Promise.all(targetStudents.map(student =>
-        dbAwardPoints({ studentId: student.id, classId: student.classId, category: behavior.category, name: behavior.name, points, comment, awardedBy: session?.user?.id })
-      )),
+      () => Promise.all(jobs),
       () => targetStudents.length === 1
-        ? { scope: 'student', targetId: targetStudents[0].id, message: `\u{1F389} Congratulations! You earned ${points} points for ${behavior.name}.` }
-        : { scope: 'broadcast', message: `\u{1F389} ${targetStudents.length} students earned ${points} points for ${behavior.name}.` }
+        ? { scope: 'student', targetId: targetStudents[0].id, message: `\u{1F389} Congratulations! You earned ${totalPoints} points for ${behaviorNames}.` }
+        : { scope: 'broadcast', message: `\u{1F389} ${targetStudents.length} students earned ${totalPoints} points each for ${behaviorNames}.` }
     );
     if (targetStudents.length === 1) {
       const theme = ageTheme(targetStudents[0].ageGroup);
-      setToast({ kind: 'xp', title: theme.xpToast(points), body: `${targetStudents[0].name} \u2014 ${behavior.name}` });
+      setToast({ kind: 'xp', title: theme.xpToast(totalPoints), body: `${targetStudents[0].name} \u2014 ${behaviorNames}` });
     } else {
-      setToast({ kind: 'xp', title: `\u{1F389} +${points} XP awarded!`, body: `${targetStudents.length} students \u2014 ${behavior.name}` });
+      setToast({ kind: 'xp', title: `\u{1F389} +${totalPoints} XP each awarded!`, body: `${targetStudents.length} students \u2014 ${behaviorNames}` });
     }
     setShowRecognize(false);
   }
@@ -2507,31 +2587,39 @@ function ChallengesTab({ state, persist, classId, scopedStudents, isAdmin, db, s
 
 function RecognizeModal({ state, onClose, onSubmit }) {
   const [studentIds, setStudentIds] = useState([state.students[0].id]);
-  const [behaviorId, setBehaviorId] = useState(state.behaviors[0].id);
-  const [points, setPoints] = useState(state.behaviors[0].points);
+  const [behaviorIds, setBehaviorIds] = useState([state.behaviors[0].id]);
+  const [pointsOverride, setPointsOverride] = useState(state.behaviors[0].points);
   const [comment, setComment] = useState('');
   const grouped = CATEGORY_ORDER.map(cat => ({ category: cat, items: state.behaviors.filter(b => b.category === cat) })).filter(g => g.items.length);
-  const allSelected = studentIds.length === state.students.length;
+  const allStudentsSelected = studentIds.length === state.students.length;
+  const selectedBehaviors = behaviorIds.map(id => state.behaviors.find(b => b.id === id)).filter(Boolean);
+  const singleBehavior = selectedBehaviors.length === 1;
+  const totalPointsPerStudent = selectedBehaviors.reduce((sum, b) => sum + Number(singleBehavior && pointsOverride !== '' ? pointsOverride : b.points), 0);
 
-  function handleBehaviorChange(id) {
-    setBehaviorId(id);
-    const b = state.behaviors.find(x => x.id === id);
-    if (b) setPoints(b.points);
-  }
   function toggleStudent(id) {
     setStudentIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   }
-  function toggleAll() {
-    setStudentIds(allSelected ? [] : state.students.map(s => s.id));
+  function toggleAllStudents() {
+    setStudentIds(allStudentsSelected ? [] : state.students.map(s => s.id));
+  }
+  function toggleBehavior(id) {
+    setBehaviorIds(prev => {
+      const next = prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id];
+      if (next.length === 1) {
+        const b = state.behaviors.find(x => x.id === next[0]);
+        if (b) setPointsOverride(b.points);
+      }
+      return next;
+    });
   }
 
   return (
     <ModalShell onClose={onClose} title="Recognize Positive Behavior">
       <div className="space-y-4">
         <Field label={`Students ${studentIds.length ? `(${studentIds.length} selected)` : ''}`}>
-          <div className="rounded-lg border max-h-40 overflow-auto" style={{ borderColor: COLORS.border }}>
-            <button type="button" onClick={toggleAll} className="w-full flex items-center gap-2 px-2.5 py-2 text-xs font-bold border-b" style={{ borderColor: COLORS.border, color: COLORS.xp }}>
-              <input type="checkbox" readOnly checked={allSelected} /> Select all
+          <div className="rounded-lg border max-h-36 overflow-auto" style={{ borderColor: COLORS.border }}>
+            <button type="button" onClick={toggleAllStudents} className="w-full flex items-center gap-2 px-2.5 py-2 text-xs font-bold border-b" style={{ borderColor: COLORS.border, color: COLORS.xp }}>
+              <input type="checkbox" readOnly checked={allStudentsSelected} /> Select all
             </button>
             {state.students.map(s => (
               <label key={s.id} className="flex items-center gap-2 px-2.5 py-1.5 text-sm cursor-pointer border-b last:border-b-0" style={{ borderColor: COLORS.border }}>
@@ -2542,15 +2630,34 @@ function RecognizeModal({ state, onClose, onSubmit }) {
             ))}
           </div>
         </Field>
-        <Field label="Behavior">
-          <select value={behaviorId} onChange={e => handleBehaviorChange(e.target.value)} style={inputStyle}>
-            {grouped.map(g => <optgroup key={g.category} label={g.category}>{g.items.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}</optgroup>)}
-          </select>
+        <Field label={`Recognitions ${behaviorIds.length ? `(${behaviorIds.length} selected)` : ''}`}>
+          <div className="rounded-lg border max-h-44 overflow-auto" style={{ borderColor: COLORS.border }}>
+            {grouped.map(g => (
+              <div key={g.category}>
+                <div className="px-2.5 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wide" style={{ color: COLORS.textFaint, background: COLORS.panelSoft }}>{g.category}</div>
+                {g.items.map(b => (
+                  <label key={b.id} className="flex items-center gap-2 px-2.5 py-1.5 text-sm cursor-pointer border-b last:border-b-0" style={{ borderColor: COLORS.border }}>
+                    <input type="checkbox" checked={behaviorIds.includes(b.id)} onChange={() => toggleBehavior(b.id)} />
+                    <span className="min-w-0 truncate flex-1">{b.name}</span>
+                    <span className="text-[10.5px] font-bold shrink-0" style={{ color: COLORS.xp }}>+{b.points}</span>
+                  </label>
+                ))}
+              </div>
+            ))}
+          </div>
         </Field>
-        <Field label="Points"><input type="number" value={points} onChange={e => setPoints(e.target.value)} style={inputStyle} /></Field>
+        {singleBehavior ? (
+          <Field label="Points"><input type="number" value={pointsOverride} onChange={e => setPointsOverride(e.target.value)} style={inputStyle} /></Field>
+        ) : selectedBehaviors.length > 1 && (
+          <div className="text-xs font-bold rounded-lg px-3 py-2" style={{ background: `${COLORS.xp}14`, color: COLORS.xp }}>
+            Total: {totalPointsPerStudent} points {studentIds.length > 1 ? 'per student' : ''}
+          </div>
+        )}
         <Field label="Comment (optional)"><textarea value={comment} onChange={e => setComment(e.target.value)} rows={2} placeholder="You supported your team and helped them solve the problem." style={{ ...inputStyle, resize: 'none' }} /></Field>
-        <button disabled={!studentIds.length} onClick={() => onSubmit({ studentIds, behaviorId, points, comment })} className="w-full font-bold text-sm rounded-lg py-2.5 disabled:opacity-40" style={{ background: COLORS.xp, color: COLORS.onAccent }}>
-          {studentIds.length > 1 ? `Award Recognition to ${studentIds.length} Students` : 'Award Recognition'}
+        <button disabled={!studentIds.length || !behaviorIds.length}
+          onClick={() => onSubmit({ studentIds, behaviorIds, pointsOverride, comment })}
+          className="w-full font-bold text-sm rounded-lg py-2.5 disabled:opacity-40" style={{ background: COLORS.xp, color: COLORS.onAccent }}>
+          Award {behaviorIds.length > 1 ? `${behaviorIds.length} Recognitions` : 'Recognition'}{studentIds.length > 1 ? ` to ${studentIds.length} Students` : ''}
         </button>
       </div>
     </ModalShell>
