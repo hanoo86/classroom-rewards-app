@@ -6,7 +6,7 @@ import {
   Lightbulb, Bot, Armchair, Code2, Star, Lock, Zap, BarChart3, Gift,
   LayoutGrid, Medal, ClipboardList, LogOut, LogIn,
   Settings, Bell, GraduationCap, ShieldCheck, Download, Printer,
-  CalendarDays, UserPlus, Building2, Percent, ListChecks, Trash2, Shuffle, KeyRound, ChevronDown, Quote
+  CalendarDays, UserPlus, Building2, Percent, ListChecks, Trash2, Shuffle, KeyRound, ChevronDown
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 
@@ -44,19 +44,30 @@ const CATEGORY_COLOR = {
 };
 
 const DEFAULT_BEHAVIORS = [
-  { id: 'b1', category: 'Respect', name: 'Respectful behavior', points: 5 },
-  { id: 'b2', category: 'Respect', name: 'Respecting different opinions', points: 5 },
-  { id: 'b3', category: 'Teamwork', name: 'Excellent teamwork', points: 10 },
-  { id: 'b4', category: 'Teamwork', name: 'Helping a classmate', points: 5 },
-  { id: 'b5', category: 'Responsibility', name: 'Excellent responsibility', points: 10 },
-  { id: 'b6', category: 'Responsibility', name: 'Taking care of equipment', points: 5 },
-  { id: 'b7', category: 'Participation', name: 'Outstanding participation', points: 5 },
-  { id: 'b8', category: 'Leadership', name: 'Demonstrating leadership', points: 10 },
-  { id: 'b9', category: 'Problem Solving & Mindset', name: 'Excellent problem-solving attitude', points: 10 },
-  { id: 'b10', category: 'Problem Solving & Mindset', name: 'Showing perseverance', points: 10 },
-  { id: 'b11', category: 'Digital Citizenship', name: 'Excellent digital citizenship', points: 10 },
-  { id: 'b12', category: 'Robotics Behavior', name: 'Careful, safe robot handling', points: 5 },
-  { id: 'b13', category: 'Creativity', name: 'Creative idea or solution', points: 10 },
+  { id: 'b1', category: 'Respect', name: 'Respectful behavior', points: 5, type: 'positive' },
+  { id: 'b2', category: 'Respect', name: 'Respecting different opinions', points: 5, type: 'positive' },
+  { id: 'b3', category: 'Teamwork', name: 'Excellent teamwork', points: 10, type: 'positive' },
+  { id: 'b4', category: 'Teamwork', name: 'Helping a classmate', points: 5, type: 'positive' },
+  { id: 'b5', category: 'Responsibility', name: 'Excellent responsibility', points: 10, type: 'positive' },
+  { id: 'b6', category: 'Responsibility', name: 'Taking care of equipment', points: 5, type: 'positive' },
+  { id: 'b7', category: 'Participation', name: 'Outstanding participation', points: 5, type: 'positive' },
+  { id: 'b8', category: 'Leadership', name: 'Demonstrating leadership', points: 10, type: 'positive' },
+  { id: 'b9', category: 'Problem Solving & Mindset', name: 'Excellent problem-solving attitude', points: 10, type: 'positive' },
+  { id: 'b10', category: 'Problem Solving & Mindset', name: 'Showing perseverance', points: 10, type: 'positive' },
+  { id: 'b11', category: 'Digital Citizenship', name: 'Excellent digital citizenship', points: 10, type: 'positive' },
+  { id: 'b12', category: 'Robotics Behavior', name: 'Careful, safe robot handling', points: 5, type: 'positive' },
+  { id: 'b13', category: 'Creativity', name: 'Creative idea or solution', points: 10, type: 'positive' },
+  // --- concerns (negative points) — same categories as their positive counterparts,
+  // so a concern nudges a student's standing in that pillar without inflating
+  // badge progress (badge counts only ever look at positive-point entries).
+  { id: 'n1', category: 'Respect', name: 'Not respecting the teacher', points: -5, type: 'negative' },
+  { id: 'n2', category: 'Respect', name: 'Disrespectful to a classmate', points: -5, type: 'negative' },
+  { id: 'n3', category: 'Responsibility', name: 'Not following instructions', points: -5, type: 'negative' },
+  { id: 'n4', category: 'Responsibility', name: 'Did not complete assigned work', points: -5, type: 'negative' },
+  { id: 'n5', category: 'Participation', name: 'Disruptive during class', points: -5, type: 'negative' },
+  { id: 'n6', category: 'Participation', name: 'Off-task / not focused', points: -3, type: 'negative' },
+  { id: 'n7', category: 'Teamwork', name: 'Unkind to a classmate', points: -5, type: 'negative' },
+  { id: 'n8', category: 'Robotics Behavior', name: 'Careless equipment handling', points: -5, type: 'negative' },
 ];
 
 const DEFAULT_STUDENTS = [
@@ -379,7 +390,10 @@ function categoryPoints(state, studentId, category) {
   return state.behaviorLog.filter(l => l.studentId === studentId && l.category === category).reduce((s, l) => s + l.points, 0);
 }
 function categoryCount(state, studentId, category) {
-  return state.behaviorLog.filter(l => l.studentId === studentId && l.category === category).length;
+  // Only positive-point entries count toward badge progress — a concern
+  // logged in the same category (e.g. "Not respecting the teacher" under
+  // Respect) should never nudge a student closer to a Respect badge.
+  return state.behaviorLog.filter(l => l.studentId === studentId && l.category === category && l.points > 0).length;
 }
 function behaviorPillarPoints(state, studentId) {
   return state.behaviorLog.filter(l => l.studentId === studentId && PILLAR_MAP[l.category] === 'behavior').reduce((s, l) => s + l.points, 0);
@@ -544,14 +558,17 @@ function ageTheme(ageGroup) {
   if (ageGroup === 'primary') return {
     greet: n => `Welcome back, ${n}! \u{1F44B}`,
     xpToast: n => `\u{1F680} Amazing! You earned ${n} XP!`,
+    concernToast: () => `Let's work on this together`,
   };
   if (ageGroup === 'middle') return {
     greet: n => `Welcome back, ${n} \u{1F44B}`,
     xpToast: n => `\u{1F525} +${n} XP earned!`,
+    concernToast: () => `A note was logged for you`,
   };
   return {
     greet: n => `Welcome back, ${n}`,
     xpToast: n => `+${n} XP`,
+    concernToast: () => `A note was logged`,
   };
 }
 
@@ -784,12 +801,13 @@ function BadgeTile({ def, earned, progressText }) {
 
 function Toast({ toast }) {
   if (!toast) return null;
-  const colorMap = { xp: COLORS.xp, badge: COLORS.xp, reward: COLORS.reward, reflect: COLORS.behavior };
+  const colorMap = { xp: COLORS.xp, badge: COLORS.xp, reward: COLORS.reward, reflect: COLORS.behavior, concern: COLORS.challenge };
   const color = colorMap[toast.kind] || COLORS.xp;
+  const Icon = toast.kind === 'concern' ? MessageSquare : Sparkles;
   return (
     <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[60]">
       <div className="rounded-xl px-5 py-3 shadow-2xl flex items-center gap-3 max-w-sm border" style={{ background: COLORS.panel, borderColor: `${color}55` }}>
-        <Sparkles size={18} style={{ color }} className="shrink-0" />
+        <Icon size={18} style={{ color }} className="shrink-0" />
         <div>
           <div className="text-sm font-bold" style={{ color: COLORS.text }}>{toast.title}</div>
           {toast.body && <div className="text-xs" style={{ color: COLORS.textMuted }}>{toast.body}</div>}
@@ -949,11 +967,13 @@ function TeacherAuthModal({ onClose, onSuccess }) {
 
 /* ------------------------------------ App -------------------------------------- */
 
-const LANDING_FEATURES = [
-  { icon: Sparkles, color: 'xp', title: 'Recognize students in one tap', body: 'Award points for behavior and great work \u2014 to one student or a whole group at once. Kids watch their star grow in real time.' },
-  { icon: Gift, color: 'reward', title: 'A reward marketplace they\u2019ll love', body: 'Students spend earned XP on rewards you choose. No spreadsheets, no sticker charts, no paper tickets to track.' },
-  { icon: Trophy, color: 'robotics', title: 'Class vs. class competitions', body: 'Run monthly challenges across your own sections and crown a champion class \u2014 scored automatically.' },
-  { icon: ShieldCheck, color: 'behavior', title: 'Private by design', body: 'Every class is only visible to the teacher who made it. Students see only their own progress, never a classmate\u2019s.' },
+// The three-step path is a genuine sequence (how a class actually moves
+// through the app), so it's the one place on the page that earns numbered
+// nodes. Everything else on the page is not a sequence and stays unnumbered.
+const LANDING_JOURNEY = [
+  { icon: Sparkles, color: 'xp', title: 'Recognize', body: 'Tap a name, pick a reason, and points land instantly \u2014 for one student or a whole group at once.' },
+  { icon: Gift, color: 'reward', title: 'Redeem', body: 'Students spend what they\u2019ve earned in a reward store you build. No sticker charts, no paper tickets.' },
+  { icon: Trophy, color: 'robotics', title: 'Compete', body: 'Your own sections face off in monthly challenges, scored automatically \u2014 a champion class every month.' },
 ];
 
 // NOTE for Hana: these are placeholder quotes so the section isn't empty —
@@ -978,11 +998,11 @@ function RoleTile({ icon: Icon, color, label, sub, onClick }) {
   return (
     <button onClick={onClick} className="animate-fade-up flex flex-col items-center gap-2 group">
       <div className="w-16 h-16 rounded-2xl flex items-center justify-center border transition group-hover:-translate-y-1"
-        style={{ background: COLORS.panel, borderColor: COLORS.border, boxShadow: '0 2px 10px rgba(20,30,80,0.06)' }}>
+        style={{ background: COLORS.panel, borderColor: 'rgba(255,255,255,0.08)', boxShadow: '0 10px 28px rgba(4,7,20,0.4)' }}>
         <Icon size={26} style={{ color }} />
       </div>
-      <div className="text-xs font-black">{label}</div>
-      {sub && <div className="text-[10px] max-w-[110px] text-center leading-tight" style={{ color: COLORS.textFaint }}>{sub}</div>}
+      <div className="text-xs font-black" style={{ color: COLORS.onAccent }}>{label}</div>
+      {sub && <div className="text-[10px] max-w-[110px] text-center leading-tight" style={{ color: COLORS.sidebarText }}>{sub}</div>}
     </button>
   );
 }
@@ -1002,36 +1022,46 @@ function FaqItem({ q, a, open, onToggle }) {
 function LandingPage({ state, onPickStudent, onPickTeacher }) {
   const showcase = state.students.slice(0, 6);
   const [openFaq, setOpenFaq] = useState(0);
+  // Fixed, deterministic star field so the hero doesn't reshuffle on re-render.
+  const heroStars = [
+    { top: '12%', left: '8%', delay: '0s' }, { top: '22%', left: '88%', delay: '0.4s' },
+    { top: '68%', left: '5%', delay: '0.9s' }, { top: '78%', left: '92%', delay: '1.3s' },
+    { top: '8%', left: '46%', delay: '1.7s' }, { top: '85%', left: '52%', delay: '0.2s' },
+    { top: '40%', left: '94%', delay: '1.1s' }, { top: '48%', left: '3%', delay: '0.6s' },
+  ];
 
   return (
     <div style={{ background: COLORS.bg }}>
-      {/* ---------- Hero ---------- */}
-      <div className="px-4 pt-14 pb-12" style={{ background: `linear-gradient(160deg, ${COLORS.panelAlt}, ${COLORS.bg})` }}>
-        <div className="max-w-3xl mx-auto text-center">
-          <div className="relative w-16 h-16 mx-auto mb-4 rounded-full overflow-hidden animate-pop-in"
-            style={{ background: `radial-gradient(circle at 50% 40%, ${COLORS.sidebarBg}, #0A0E22)` }}>
+      {/* ---------- Hero: night sky, matching the Najm (\u201cstar\u201d) mark ---------- */}
+      <div className="relative overflow-hidden px-4 pt-16 pb-20" style={{ background: `linear-gradient(185deg, #0A0E22, ${COLORS.sidebarBg} 55%, ${COLORS.sidebarBg})` }}>
+        {heroStars.map((s, i) => (
+          <div key={i} className="star-twinkle" style={{ top: s.top, left: s.left, animationDelay: s.delay }} />
+        ))}
+        <div className="relative max-w-3xl mx-auto text-center">
+          <div className="relative w-16 h-16 mx-auto mb-5 rounded-full overflow-hidden animate-pop-in"
+            style={{ background: `radial-gradient(circle at 50% 40%, #1B2757, #0A0E22)`, boxShadow: `0 0 0 1px rgba(255,255,255,0.08), 0 0 30px ${COLORS.sidebarActive}22` }}>
             <div className="star-twinkle" style={{ top: '20%', left: '25%', animationDelay: '0s' }} />
             <div className="star-twinkle" style={{ top: '65%', left: '70%', animationDelay: '0.8s' }} />
             <div className="star-twinkle" style={{ top: '25%', left: '68%', animationDelay: '1.4s' }} />
             <img src="/najm-mascot.png" alt="Najm mascot: a smiling trophy on a stack of books, cheered on by two kids"
               className="absolute inset-0 w-full h-full object-contain animate-float" />
           </div>
-          <div className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 mb-5 text-[10.5px] font-black tracking-wide animate-fade-up" style={{ background: `${COLORS.robotics}14`, color: COLORS.robotics }}>
-            <Star size={11} fill={COLORS.robotics} /> EVERY STUDENT IS A STAR
+          <div className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 mb-5 text-[10.5px] font-black tracking-wide animate-fade-up" style={{ background: `${COLORS.sidebarActive}22`, color: COLORS.sidebarActive }}>
+            <Star size={11} fill={COLORS.sidebarActive} /> EVERY STUDENT IS A STAR
           </div>
-          <h1 className="text-3xl sm:text-5xl font-display font-black tracking-tight leading-[1.1] mb-4 animate-fade-up" style={{ animationDelay: '60ms' }}>
-            A classroom reward system<br className="hidden sm:block" /> students actually <span style={{ color: COLORS.xp }}>care about</span>
+          <h1 className="text-3xl sm:text-5xl font-display font-black tracking-tight leading-[1.1] mb-4 animate-fade-up" style={{ animationDelay: '60ms', color: COLORS.onAccent }}>
+            A classroom reward system<br className="hidden sm:block" /> students actually <span style={{ color: COLORS.sidebarActive }}>care about</span>
           </h1>
-          <p className="text-base sm:text-lg font-medium max-w-xl mx-auto mb-9 animate-fade-up" style={{ animationDelay: '120ms', color: COLORS.textMuted }}>
+          <p className="text-base sm:text-lg font-medium max-w-xl mx-auto mb-9 animate-fade-up" style={{ animationDelay: '120ms', color: COLORS.sidebarText }}>
             Add your students in seconds, share a simple class code, and motivate behavior by rewarding points in real time.
           </p>
 
-          <div className="text-[11px] font-black uppercase tracking-wide mb-4 animate-fade-up" style={{ animationDelay: '160ms', color: COLORS.textFaint }}>Get started as a{'\u2026'}</div>
+          <div className="text-[11px] font-black uppercase tracking-wide mb-4 animate-fade-up" style={{ animationDelay: '160ms', color: COLORS.sidebarText }}>Get started as a{'\u2026'}</div>
           <div className="flex items-center justify-center gap-6 sm:gap-10 mb-7">
-            <RoleTile icon={GraduationCap} color={COLORS.robotics} label="Teacher" sub="Create classes & give points" onClick={onPickTeacher} />
-            <RoleTile icon={UserCircle2} color={COLORS.xp} label="Student" sub="See my progress" onClick={onPickStudent} />
+            <RoleTile icon={GraduationCap} color={COLORS.sidebarActive} label="Teacher" sub="Create classes & give points" onClick={onPickTeacher} />
+            <RoleTile icon={UserCircle2} color={COLORS.sidebarActive} label="Student" sub="See my progress" onClick={onPickStudent} />
           </div>
-          <button onClick={onPickTeacher} className="animate-fade-up font-black text-sm rounded-full px-8 py-3 shadow-lg" style={{ animationDelay: '200ms', background: COLORS.robotics, color: COLORS.onAccent, boxShadow: `0 8px 24px ${COLORS.robotics}40` }}>
+          <button onClick={onPickTeacher} className="animate-fade-up font-black text-sm rounded-full px-8 py-3 shadow-lg" style={{ animationDelay: '200ms', background: COLORS.sidebarActive, color: COLORS.sidebarBg, boxShadow: `0 8px 24px rgba(0,0,0,0.35)` }}>
             Get Started
           </button>
 
@@ -1047,19 +1077,34 @@ function LandingPage({ state, onPickStudent, onPickTeacher }) {
         </div>
       </div>
 
-      {/* ---------- Feature blocks (alternating) ---------- */}
-      <div className="max-w-4xl mx-auto px-4 py-16 space-y-14">
-        {LANDING_FEATURES.map((f, i) => (
-          <div key={f.title} className={`animate-fade-up flex flex-col sm:flex-row items-center gap-6 ${i % 2 ? 'sm:flex-row-reverse' : ''}`} style={{ animationDelay: `${i * 60}ms` }}>
-            <div className="w-28 h-28 sm:w-36 sm:h-36 rounded-3xl flex items-center justify-center shrink-0" style={{ background: `${COLORS[f.color]}14` }}>
-              <f.icon size={44} style={{ color: COLORS[f.color] }} strokeWidth={1.6} />
+      {/* ---------- Journey: the three real steps of using Najm ---------- */}
+      <div className="max-w-4xl mx-auto px-4 pt-16 pb-10">
+        <div className="relative grid grid-cols-1 sm:grid-cols-3 gap-10 sm:gap-6">
+          <div className="hidden sm:block absolute top-9 left-[16.5%] right-[16.5%] h-px" style={{ background: COLORS.border }} />
+          {LANDING_JOURNEY.map((f, i) => (
+            <div key={f.title} className="relative animate-fade-up text-center" style={{ animationDelay: `${i * 90}ms` }}>
+              <div className="relative w-[72px] h-[72px] mx-auto mb-4 rounded-full flex items-center justify-center border-2" style={{ background: COLORS.panel, borderColor: COLORS[f.color] }}>
+                <f.icon size={28} style={{ color: COLORS[f.color] }} strokeWidth={1.8} />
+                <div className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black" style={{ background: COLORS[f.color], color: COLORS.onAccent }}>{i + 1}</div>
+              </div>
+              <div className="text-base font-display font-black mb-1.5">{f.title}</div>
+              <div className="text-sm leading-relaxed max-w-[220px] mx-auto" style={{ color: COLORS.textMuted }}>{f.body}</div>
             </div>
-            <div className="text-center sm:text-left">
-              <div className="text-lg sm:text-xl font-display font-black mb-1.5">{f.title}</div>
-              <div className="text-sm leading-relaxed max-w-md" style={{ color: COLORS.textMuted }}>{f.body}</div>
-            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ---------- Privacy assurance (a standing fact, not a journey step) ---------- */}
+      <div className="max-w-4xl mx-auto px-4 pb-16">
+        <div className="animate-fade-up flex flex-col sm:flex-row items-center gap-4 rounded-2xl border p-5 sm:p-6" style={{ background: COLORS.panelAlt, borderColor: COLORS.border }}>
+          <div className="w-14 h-14 rounded-2xl flex items-center justify-center shrink-0" style={{ background: `${COLORS.behavior}16` }}>
+            <ShieldCheck size={26} style={{ color: COLORS.behavior }} strokeWidth={1.8} />
           </div>
-        ))}
+          <div className="text-center sm:text-left">
+            <div className="text-sm font-display font-black mb-1">Private by design</div>
+            <div className="text-[13px] leading-relaxed" style={{ color: COLORS.textMuted }}>Every class is only visible to the teacher who made it, and students never see a classmate\u2019s points \u2014 only their own dashboard.</div>
+          </div>
+        </div>
       </div>
 
       {/* ---------- Testimonials ---------- */}
@@ -1071,7 +1116,9 @@ function LandingPage({ state, onPickStudent, onPickTeacher }) {
           <div className="grid sm:grid-cols-3 gap-4">
             {LANDING_TESTIMONIALS.map((t, i) => (
               <div key={i} className="animate-fade-up rounded-2xl p-5 border" style={{ animationDelay: `${i * 60}ms`, background: COLORS.panel, borderColor: COLORS.border }}>
-                <Quote size={18} style={{ color: COLORS.robotics }} className="mb-2" />
+                <div className="flex gap-0.5 mb-2.5">
+                  {Array.from({ length: 5 }).map((_, si) => <Star key={si} size={13} fill={COLORS.sidebarActive} style={{ color: COLORS.sidebarActive }} />)}
+                </div>
                 <p className="text-[12.5px] leading-relaxed mb-3" style={{ color: COLORS.text }}>{t.quote}</p>
                 <div className="text-xs font-black">{t.name}</div>
                 <div className="text-[10.5px]" style={{ color: COLORS.textFaint }}>{t.role}</div>
@@ -1093,13 +1140,18 @@ function LandingPage({ state, onPickStudent, onPickTeacher }) {
         </div>
       </div>
 
-      {/* ---------- Bottom CTA ---------- */}
-      <div className="px-4 py-16 text-center" style={{ background: `linear-gradient(135deg, ${COLORS.robotics}, ${COLORS.coding})` }}>
-        <div className="text-2xl sm:text-3xl font-display font-black mb-2" style={{ color: COLORS.onAccent }}>Get started with Najm today</div>
-        <p className="text-sm mb-7" style={{ color: `${COLORS.onAccent}CC` }}>Create your free teacher account and set up your first class in minutes.</p>
-        <button onClick={onPickTeacher} className="font-black text-sm rounded-full px-8 py-3" style={{ background: COLORS.onAccent, color: COLORS.robotics }}>
-          Get Started
-        </button>
+      {/* ---------- Bottom CTA: bookends the hero with the same night sky ---------- */}
+      <div className="relative overflow-hidden px-4 py-16 text-center" style={{ background: `linear-gradient(160deg, ${COLORS.sidebarBg}, #0A0E22)` }}>
+        <div className="star-twinkle" style={{ top: '20%', left: '12%', animationDelay: '0.3s' }} />
+        <div className="star-twinkle" style={{ top: '70%', left: '85%', animationDelay: '1.1s' }} />
+        <div className="star-twinkle" style={{ top: '30%', left: '90%', animationDelay: '0.7s' }} />
+        <div className="relative">
+          <div className="text-2xl sm:text-3xl font-display font-black mb-2" style={{ color: COLORS.onAccent }}>Get started with Najm today</div>
+          <p className="text-sm mb-7" style={{ color: COLORS.sidebarText }}>Create your free teacher account and set up your first class in minutes.</p>
+          <button onClick={onPickTeacher} className="font-black text-sm rounded-full px-8 py-3" style={{ background: COLORS.sidebarActive, color: COLORS.sidebarBg }}>
+            Get Started
+          </button>
+        </div>
       </div>
 
       {/* ---------- Footer ---------- */}
@@ -1447,13 +1499,21 @@ export default function App() {
       });
     });
 
+    const isConcern = totalPoints < 0;
+
     runDb(
       () => Promise.all(jobs),
-      () => targetStudents.length === 1
-        ? { scope: 'student', targetId: targetStudents[0].id, message: `\u{1F389} Congratulations! You earned ${totalPoints} points for ${behaviorNames}.` }
-        : { scope: 'broadcast', message: `\u{1F389} ${targetStudents.length} students earned ${totalPoints} points each for ${behaviorNames}.` }
+      () => isConcern
+        ? (targetStudents.length === 1
+          ? { scope: 'student', targetId: targetStudents[0].id, message: `A note was logged for ${behaviorNames}. Let's talk about it and turn it around.` }
+          : { scope: 'broadcast', message: `A note was logged for ${targetStudents.length} students \u2014 ${behaviorNames}.` })
+        : (targetStudents.length === 1
+          ? { scope: 'student', targetId: targetStudents[0].id, message: `\u{1F389} Congratulations! You earned ${totalPoints} points for ${behaviorNames}.` }
+          : { scope: 'broadcast', message: `\u{1F389} ${targetStudents.length} students earned ${totalPoints} points each for ${behaviorNames}.` })
     );
-    if (targetStudents.length === 1) {
+    if (isConcern) {
+      setToast({ kind: 'concern', title: targetStudents.length === 1 ? ageTheme(targetStudents[0].ageGroup).concernToast() : 'A note was logged', body: `${targetStudents.map(s => s.name).join(', ')} \u2014 ${behaviorNames}` });
+    } else if (targetStudents.length === 1) {
       const theme = ageTheme(targetStudents[0].ageGroup);
       setToast({ kind: 'xp', title: theme.xpToast(totalPoints), body: `${targetStudents[0].name} \u2014 ${behaviorNames}` });
     } else {
@@ -1597,7 +1657,7 @@ export default function App() {
         <button onClick={() => setShowRecognize(true)}
           className="fixed bottom-5 right-5 z-30 rounded-full shadow-2xl flex items-center gap-2 px-4 py-3 font-bold text-xs"
           style={{ background: COLORS.xp, color: COLORS.onAccent }}>
-          <Plus size={16} /> Quick Recognition
+          <Plus size={16} /> Log Behavior
         </button>
       )}
     </div>
@@ -1824,12 +1884,12 @@ function DashboardTab({ state, student, theme, lvl, xp, onReflect }) {
 
       {log.length > 0 && (
         <div>
-          <SectionLabel icon={ClipboardList}>Recent Recognitions</SectionLabel>
+          <SectionLabel icon={ClipboardList}>Recent Activity</SectionLabel>
           <div className="space-y-1.5">
             {log.map(l => (
-              <div key={l.id} className="flex justify-between text-xs rounded-lg px-3 py-2 border-l-2" style={{ background: COLORS.panelAlt, borderColor: CATEGORY_COLOR[l.category] }}>
+              <div key={l.id} className="flex justify-between text-xs rounded-lg px-3 py-2 border-l-2" style={{ background: COLORS.panelAlt, borderColor: l.points < 0 ? COLORS.challenge : CATEGORY_COLOR[l.category] }}>
                 <span style={{ color: COLORS.text }}>{l.name}</span>
-                <span className="font-mono font-bold" style={{ color: COLORS.xp }}>+{l.points}</span>
+                <span className="font-mono font-bold" style={{ color: l.points < 0 ? COLORS.challenge : COLORS.xp }}>{l.points > 0 ? `+${l.points}` : l.points}</span>
               </div>
             ))}
           </div>
@@ -2586,16 +2646,29 @@ function ChallengesTab({ state, persist, classId, scopedStudents, isAdmin, db, s
 /* ------------------------------- Recognize modal ---------------------------------- */
 
 function RecognizeModal({ state, onClose, onSubmit }) {
+  const positiveBehaviors = state.behaviors.filter(b => (b.type || 'positive') === 'positive');
+  const negativeBehaviors = state.behaviors.filter(b => b.type === 'negative');
+  const [mode, setMode] = useState('positive'); // 'positive' | 'negative'
+  const accent = mode === 'positive' ? COLORS.xp : COLORS.challenge;
+  const list = mode === 'positive' ? positiveBehaviors : negativeBehaviors;
+
   const [studentIds, setStudentIds] = useState([state.students[0].id]);
-  const [behaviorIds, setBehaviorIds] = useState([state.behaviors[0].id]);
-  const [pointsOverride, setPointsOverride] = useState(state.behaviors[0].points);
+  const [behaviorIds, setBehaviorIds] = useState(list.length ? [list[0].id] : []);
+  const [pointsOverride, setPointsOverride] = useState(list.length ? list[0].points : 0);
   const [comment, setComment] = useState('');
-  const grouped = CATEGORY_ORDER.map(cat => ({ category: cat, items: state.behaviors.filter(b => b.category === cat) })).filter(g => g.items.length);
+  const grouped = CATEGORY_ORDER.map(cat => ({ category: cat, items: list.filter(b => b.category === cat) })).filter(g => g.items.length);
   const allStudentsSelected = studentIds.length === state.students.length;
-  const selectedBehaviors = behaviorIds.map(id => state.behaviors.find(b => b.id === id)).filter(Boolean);
+  const selectedBehaviors = behaviorIds.map(id => list.find(b => b.id === id)).filter(Boolean);
   const singleBehavior = selectedBehaviors.length === 1;
   const totalPointsPerStudent = selectedBehaviors.reduce((sum, b) => sum + Number(singleBehavior && pointsOverride !== '' ? pointsOverride : b.points), 0);
 
+  function switchMode(next) {
+    if (next === mode) return;
+    const nextList = next === 'positive' ? positiveBehaviors : negativeBehaviors;
+    setMode(next);
+    setBehaviorIds(nextList.length ? [nextList[0].id] : []);
+    setPointsOverride(nextList.length ? nextList[0].points : 0);
+  }
   function toggleStudent(id) {
     setStudentIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   }
@@ -2606,7 +2679,7 @@ function RecognizeModal({ state, onClose, onSubmit }) {
     setBehaviorIds(prev => {
       const next = prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id];
       if (next.length === 1) {
-        const b = state.behaviors.find(x => x.id === next[0]);
+        const b = list.find(x => x.id === next[0]);
         if (b) setPointsOverride(b.points);
       }
       return next;
@@ -2614,11 +2687,24 @@ function RecognizeModal({ state, onClose, onSubmit }) {
   }
 
   return (
-    <ModalShell onClose={onClose} title="Recognize Positive Behavior">
+    <ModalShell onClose={onClose} title={mode === 'positive' ? 'Recognize Positive Behavior' : 'Log a Concern'}>
       <div className="space-y-4">
+        <div className="flex rounded-lg border p-1" style={{ borderColor: COLORS.border, background: COLORS.panelSoft }}>
+          <button type="button" onClick={() => switchMode('positive')}
+            className="flex-1 flex items-center justify-center gap-1.5 rounded-md py-2 text-xs font-bold transition"
+            style={mode === 'positive' ? { background: COLORS.xp, color: COLORS.onAccent } : { color: COLORS.textMuted }}>
+            <Sparkles size={13} /> Recognize
+          </button>
+          <button type="button" onClick={() => switchMode('negative')}
+            className="flex-1 flex items-center justify-center gap-1.5 rounded-md py-2 text-xs font-bold transition"
+            style={mode === 'negative' ? { background: COLORS.challenge, color: COLORS.onAccent } : { color: COLORS.textMuted }}>
+            <MessageSquare size={13} /> Log a Concern
+          </button>
+        </div>
+
         <Field label={`Students ${studentIds.length ? `(${studentIds.length} selected)` : ''}`}>
           <div className="rounded-lg border max-h-36 overflow-auto" style={{ borderColor: COLORS.border }}>
-            <button type="button" onClick={toggleAllStudents} className="w-full flex items-center gap-2 px-2.5 py-2 text-xs font-bold border-b" style={{ borderColor: COLORS.border, color: COLORS.xp }}>
+            <button type="button" onClick={toggleAllStudents} className="w-full flex items-center gap-2 px-2.5 py-2 text-xs font-bold border-b" style={{ borderColor: COLORS.border, color: accent }}>
               <input type="checkbox" readOnly checked={allStudentsSelected} /> Select all
             </button>
             {state.students.map(s => (
@@ -2630,34 +2716,46 @@ function RecognizeModal({ state, onClose, onSubmit }) {
             ))}
           </div>
         </Field>
-        <Field label={`Recognitions ${behaviorIds.length ? `(${behaviorIds.length} selected)` : ''}`}>
-          <div className="rounded-lg border max-h-44 overflow-auto" style={{ borderColor: COLORS.border }}>
-            {grouped.map(g => (
-              <div key={g.category}>
-                <div className="px-2.5 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wide" style={{ color: COLORS.textFaint, background: COLORS.panelSoft }}>{g.category}</div>
-                {g.items.map(b => (
-                  <label key={b.id} className="flex items-center gap-2 px-2.5 py-1.5 text-sm cursor-pointer border-b last:border-b-0" style={{ borderColor: COLORS.border }}>
-                    <input type="checkbox" checked={behaviorIds.includes(b.id)} onChange={() => toggleBehavior(b.id)} />
-                    <span className="min-w-0 truncate flex-1">{b.name}</span>
-                    <span className="text-[10.5px] font-bold shrink-0" style={{ color: COLORS.xp }}>+{b.points}</span>
-                  </label>
-                ))}
-              </div>
-            ))}
-          </div>
+        <Field label={`${mode === 'positive' ? 'Recognitions' : 'Concerns'} ${behaviorIds.length ? `(${behaviorIds.length} selected)` : ''}`}>
+          {list.length === 0 ? (
+            <div className="text-xs rounded-lg border px-2.5 py-3 text-center" style={{ borderColor: COLORS.border, color: COLORS.textFaint }}>
+              No {mode === 'positive' ? 'recognitions' : 'concerns'} set up yet.
+            </div>
+          ) : (
+            <div className="rounded-lg border max-h-44 overflow-auto" style={{ borderColor: COLORS.border }}>
+              {grouped.map(g => (
+                <div key={g.category}>
+                  <div className="px-2.5 pt-2 pb-1 text-[10px] font-bold uppercase tracking-wide" style={{ color: COLORS.textFaint, background: COLORS.panelSoft }}>{g.category}</div>
+                  {g.items.map(b => (
+                    <label key={b.id} className="flex items-center gap-2 px-2.5 py-1.5 text-sm cursor-pointer border-b last:border-b-0" style={{ borderColor: COLORS.border }}>
+                      <input type="checkbox" checked={behaviorIds.includes(b.id)} onChange={() => toggleBehavior(b.id)} />
+                      <span className="min-w-0 truncate flex-1">{b.name}</span>
+                      <span className="text-[10.5px] font-bold shrink-0" style={{ color: accent }}>{b.points > 0 ? `+${b.points}` : b.points}</span>
+                    </label>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
         </Field>
         {singleBehavior ? (
           <Field label="Points"><input type="number" value={pointsOverride} onChange={e => setPointsOverride(e.target.value)} style={inputStyle} /></Field>
         ) : selectedBehaviors.length > 1 && (
-          <div className="text-xs font-bold rounded-lg px-3 py-2" style={{ background: `${COLORS.xp}14`, color: COLORS.xp }}>
+          <div className="text-xs font-bold rounded-lg px-3 py-2" style={{ background: `${accent}14`, color: accent }}>
             Total: {totalPointsPerStudent} points {studentIds.length > 1 ? 'per student' : ''}
           </div>
         )}
-        <Field label="Comment (optional)"><textarea value={comment} onChange={e => setComment(e.target.value)} rows={2} placeholder="You supported your team and helped them solve the problem." style={{ ...inputStyle, resize: 'none' }} /></Field>
+        <Field label="Comment (optional)">
+          <textarea value={comment} onChange={e => setComment(e.target.value)} rows={2}
+            placeholder={mode === 'positive' ? 'You supported your team and helped them solve the problem.' : 'What happened, and what should change next time?'}
+            style={{ ...inputStyle, resize: 'none' }} />
+        </Field>
         <button disabled={!studentIds.length || !behaviorIds.length}
           onClick={() => onSubmit({ studentIds, behaviorIds, pointsOverride, comment })}
-          className="w-full font-bold text-sm rounded-lg py-2.5 disabled:opacity-40" style={{ background: COLORS.xp, color: COLORS.onAccent }}>
-          Award {behaviorIds.length > 1 ? `${behaviorIds.length} Recognitions` : 'Recognition'}{studentIds.length > 1 ? ` to ${studentIds.length} Students` : ''}
+          className="w-full font-bold text-sm rounded-lg py-2.5 disabled:opacity-40" style={{ background: accent, color: COLORS.onAccent }}>
+          {mode === 'positive'
+            ? `Award ${behaviorIds.length > 1 ? `${behaviorIds.length} Recognitions` : 'Recognition'}${studentIds.length > 1 ? ` to ${studentIds.length} Students` : ''}`
+            : `Log ${behaviorIds.length > 1 ? `${behaviorIds.length} Concerns` : 'Concern'}${studentIds.length > 1 ? ` for ${studentIds.length} Students` : ''}`}
         </button>
       </div>
     </ModalShell>
