@@ -6,7 +6,7 @@ import {
   Lightbulb, Bot, Armchair, Code2, Star, Lock, Zap, BarChart3, Gift,
   LayoutGrid, Medal, ClipboardList, LogOut, LogIn,
   Settings, Bell, GraduationCap, ShieldCheck, Download, Printer,
-  CalendarDays, UserPlus, Building2, Percent, ListChecks, Trash2, Shuffle, KeyRound, ChevronDown
+  CalendarDays, UserPlus, Building2, Percent, ListChecks, Trash2, Shuffle, KeyRound, ChevronDown, Volume2
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
 
@@ -68,6 +68,10 @@ const DEFAULT_BEHAVIORS = [
   { id: 'n6', category: 'Participation', name: 'Off-task / not focused', points: -3, type: 'negative' },
   { id: 'n7', category: 'Teamwork', name: 'Unkind to a classmate', points: -5, type: 'negative' },
   { id: 'n8', category: 'Robotics Behavior', name: 'Careless equipment handling', points: -5, type: 'negative' },
+  // --- Focus Meter (classroom noise monitor) — only ever applied when the
+  // teacher taps Confirm on a suggestion; never written automatically.
+  { id: 'n9', category: 'Participation', name: 'Classroom noise level', points: -3, type: 'negative' },
+  { id: 'b14', category: 'Participation', name: 'Focused, quiet work', points: 3, type: 'positive' },
 ];
 
 const DEFAULT_STUDENTS = [
@@ -228,10 +232,18 @@ async function loadState() {
   (profilesR.data || []).forEach(p => { if (p.email) teacherAssignments[p.email.toLowerCase()] = { isAdmin: p.is_admin, classId: p.class_id }; });
 
   const extra = schoolDataR.data?.data || {};
+  // A teacher's saved school_data.behaviors fully replaces the defaults once
+  // they have one, which means any behavior we add later (concerns, the
+  // Focus Meter's two entries, etc.) would silently never reach an existing
+  // account. Union in whichever defaults are missing by id, every load.
+  const savedBehaviors = extra.behaviors || [];
+  const savedBehaviorIds = new Set(savedBehaviors.map(b => b.id));
+  const mergedBehaviors = [...savedBehaviors, ...DEFAULT_BEHAVIORS.filter(b => !savedBehaviorIds.has(b.id))];
 
   return {
     ...defaultState(),
     ...extra,
+    behaviors: mergedBehaviors,
     classes: (classesR.data || []).map(rowToClass),
     students: (studentsR.data || []).map(rowToStudent),
     behaviorLog: (pointsR.data || []).map(rowToBehaviorLog),
@@ -1660,6 +1672,9 @@ export default function App() {
           <Plus size={16} /> Log Behavior
         </button>
       )}
+      {role === 'teacher' && effectiveClassId && session && teacherStudents.length > 0 && (
+        <FocusMeter students={teacherStudents} onAward={awardBehavior} />
+      )}
     </div>
   );
 }
@@ -2759,6 +2774,194 @@ function RecognizeModal({ state, onClose, onSubmit }) {
         </button>
       </div>
     </ModalShell>
+  );
+}
+
+/* -------------------------- Focus Meter (noise-aware class XP) ---------------------------- */
+// Runs entirely in the teacher's own browser tab: a live, RELATIVE loudness
+// reading from that device's mic — not a calibrated decibel meter. Audio is
+// never recorded or sent anywhere; only a live number is read, every frame,
+// and thrown away. The mic only turns on when the teacher taps "Turn on"
+// below, never automatically. Sustained loud/quiet periods only ever
+// *suggest* a class-wide point change — nothing is applied without the
+// teacher tapping Confirm.
+function FocusMeter({ students, onAward }) {
+  const [expanded, setExpanded] = useState(false);
+  const [active, setActive] = useState(false);
+  const [error, setError] = useState(null);
+  const [level, setLevel] = useState(0);
+  const [baseline, setBaseline] = useState(null);
+  const [calibrating, setCalibrating] = useState(false);
+  const [loudSeconds, setLoudSeconds] = useState(10);
+  const [quietMinutes, setQuietMinutes] = useState(5);
+  const [suggestion, setSuggestion] = useState(null); // 'loud' | 'quiet' | null
+
+  const streamRef = useRef(null);
+  const ctxRef = useRef(null);
+  const analyserRef = useRef(null);
+  const dataRef = useRef(null);
+  const rafRef = useRef(null);
+  const levelRef = useRef(0);
+  const loudSinceRef = useRef(null);
+  const quietSinceRef = useRef(null);
+  const cooldownUntilRef = useRef(0);
+  const suggestionRef = useRef(null);
+  const calibratingRef = useRef(false);
+  const calibSamplesRef = useRef([]);
+  const settingsRef = useRef({ loudSeconds, quietMinutes, baseline });
+
+  useEffect(() => { settingsRef.current = { loudSeconds, quietMinutes, baseline }; }, [loudSeconds, quietMinutes, baseline]);
+  useEffect(() => { suggestionRef.current = suggestion; }, [suggestion]);
+  useEffect(() => { calibratingRef.current = calibrating; }, [calibrating]);
+  useEffect(() => () => stopMic(), []); // stop the mic if this widget ever unmounts (e.g. switching classes)
+
+  function stopMic() {
+    if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
+    if (ctxRef.current && ctxRef.current.state !== 'closed') ctxRef.current.close().catch(() => {});
+    streamRef.current = null; ctxRef.current = null; analyserRef.current = null;
+    loudSinceRef.current = null; quietSinceRef.current = null; levelRef.current = 0;
+    setActive(false); setLevel(0);
+  }
+
+  async function startMic() {
+    setError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 512;
+      ctx.createMediaStreamSource(stream).connect(analyser);
+      streamRef.current = stream; ctxRef.current = ctx; analyserRef.current = analyser;
+      dataRef.current = new Uint8Array(analyser.fftSize);
+      setActive(true);
+      rafRef.current = requestAnimationFrame(tick);
+    } catch (e) {
+      setError('Microphone access was blocked. Allow it in your browser\u2019s site settings to use the Focus Meter.');
+    }
+  }
+
+  function tick() {
+    const analyser = analyserRef.current;
+    if (!analyser) return;
+    analyser.getByteTimeDomainData(dataRef.current);
+    let sum = 0;
+    for (let i = 0; i < dataRef.current.length; i++) { const v = (dataRef.current[i] - 128) / 128; sum += v * v; }
+    const rms = Math.sqrt(sum / dataRef.current.length);
+    const smoothed = Math.round(levelRef.current * 0.8 + Math.min(100, rms * 400) * 0.2);
+    levelRef.current = smoothed;
+    setLevel(smoothed);
+    if (calibratingRef.current) calibSamplesRef.current.push(smoothed);
+
+    const { loudSeconds: ls, quietMinutes: qm, baseline: bl } = settingsRef.current;
+    const base = bl ?? 15;
+    const loudThreshold = base + 30;
+    const quietThreshold = base + 8;
+    const now = Date.now();
+
+    if (!suggestionRef.current && now > cooldownUntilRef.current) {
+      if (smoothed >= loudThreshold) {
+        quietSinceRef.current = null;
+        if (!loudSinceRef.current) loudSinceRef.current = now;
+        else if (now - loudSinceRef.current >= ls * 1000) { setSuggestion('loud'); loudSinceRef.current = null; }
+      } else if (smoothed <= quietThreshold) {
+        loudSinceRef.current = null;
+        if (!quietSinceRef.current) quietSinceRef.current = now;
+        else if (now - quietSinceRef.current >= qm * 60 * 1000) { setSuggestion('quiet'); quietSinceRef.current = null; }
+      } else {
+        loudSinceRef.current = null; quietSinceRef.current = null;
+      }
+    }
+    rafRef.current = requestAnimationFrame(tick);
+  }
+
+  function runCalibration() {
+    calibSamplesRef.current = [];
+    setCalibrating(true);
+    setTimeout(() => {
+      const samples = calibSamplesRef.current;
+      if (samples.length) setBaseline(Math.round(samples.reduce((a, b) => a + b, 0) / samples.length));
+      setCalibrating(false);
+    }, 2500);
+  }
+
+  function actOnSuggestion(confirm) {
+    if (confirm && suggestion === 'loud') {
+      onAward({ studentIds: students.map(s => s.id), behaviorIds: ['n9'], pointsOverride: null, comment: 'Logged automatically by the Focus Meter after sustained noise.' });
+    } else if (confirm && suggestion === 'quiet') {
+      onAward({ studentIds: students.map(s => s.id), behaviorIds: ['b14'], pointsOverride: null, comment: 'Logged automatically by the Focus Meter after sustained focus.' });
+    }
+    setSuggestion(null);
+    cooldownUntilRef.current = Date.now() + (confirm ? 90 : 45) * 1000;
+  }
+
+  const base = baseline ?? 15;
+  const pct = Math.min(100, level);
+  const meterColor = level >= base + 30 ? COLORS.challenge : level <= base + 8 ? COLORS.behavior : COLORS.xp;
+
+  return (
+    <>
+      {suggestion && (
+        <div className="fixed bottom-24 right-5 z-40 w-72 rounded-2xl border p-4 shadow-2xl animate-fade-up"
+          style={{ background: COLORS.panel, borderColor: suggestion === 'loud' ? COLORS.challenge : COLORS.behavior }}>
+          <div className="flex items-center gap-2 mb-1.5">
+            <Volume2 size={16} style={{ color: suggestion === 'loud' ? COLORS.challenge : COLORS.behavior }} />
+            <div className="text-xs font-black">{suggestion === 'loud' ? 'The room has been loud for a while' : 'The class has been focused and quiet'}</div>
+          </div>
+          <p className="text-[11.5px] mb-3" style={{ color: COLORS.textMuted }}>
+            {suggestion === 'loud'
+              ? `Log a class-wide note (\u22123 points each) for all ${students.length} students?`
+              : `Award a quiet-work bonus (+3 points each) to all ${students.length} students?`}
+          </p>
+          <div className="flex gap-2">
+            <button onClick={() => actOnSuggestion(false)} className="flex-1 text-xs font-bold rounded-lg py-2" style={{ background: COLORS.panelSoft, color: COLORS.textMuted }}>Dismiss</button>
+            <button onClick={() => actOnSuggestion(true)} className="flex-1 text-xs font-bold rounded-lg py-2" style={{ background: suggestion === 'loud' ? COLORS.challenge : COLORS.behavior, color: COLORS.onAccent }}>Confirm</button>
+          </div>
+        </div>
+      )}
+
+      {expanded && (
+        <div className="fixed bottom-24 right-5 z-30 w-64 rounded-2xl border p-4 shadow-2xl" style={{ background: COLORS.panel, borderColor: COLORS.border }}>
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-xs font-black flex items-center gap-1.5"><Volume2 size={14} /> Focus Meter</div>
+            <button onClick={() => setExpanded(false)}><X size={14} style={{ color: COLORS.textFaint }} /></button>
+          </div>
+          {error && <div className="text-[11px] mb-2" style={{ color: COLORS.challenge }}>{error}</div>}
+          {!active ? (
+            <>
+              <p className="text-[11px] mb-2.5 leading-relaxed" style={{ color: COLORS.textMuted }}>
+                Uses this device\u2019s mic to sense room noise. Nothing is recorded \u2014 only a live level, discarded instantly. Best on the device at the front of the room.
+              </p>
+              <button onClick={startMic} className="w-full text-xs font-bold rounded-lg py-2" style={{ background: COLORS.robotics, color: COLORS.onAccent }}>Turn on Focus Meter</button>
+            </>
+          ) : (
+            <>
+              <div className="h-3 rounded-full overflow-hidden mb-1" style={{ background: COLORS.panelSoft }}>
+                <div className="h-full transition-all" style={{ width: `${pct}%`, background: meterColor }} />
+              </div>
+              <div className="text-[10px] mb-3" style={{ color: COLORS.textFaint }}>
+                {baseline == null ? 'Not calibrated \u2014 tap Calibrate for best results.' : 'Calibrated to this room.'}
+              </div>
+              <button onClick={runCalibration} disabled={calibrating}
+                className="w-full text-xs font-bold rounded-lg py-2 mb-3 disabled:opacity-50" style={{ background: COLORS.panelSoft, color: COLORS.text }}>
+                {calibrating ? 'Listening to the room\u2026' : 'Calibrate to this room'}
+              </button>
+              <div className="text-[10px] mb-1" style={{ color: COLORS.textFaint }}>Loud for {loudSeconds}s suggests a note</div>
+              <input type="range" min={5} max={30} value={loudSeconds} onChange={e => setLoudSeconds(Number(e.target.value))} className="w-full mb-2.5" />
+              <div className="text-[10px] mb-1" style={{ color: COLORS.textFaint }}>Quiet for {quietMinutes} min suggests a bonus</div>
+              <input type="range" min={2} max={15} value={quietMinutes} onChange={e => setQuietMinutes(Number(e.target.value))} className="w-full mb-3" />
+              <button onClick={stopMic} className="w-full text-xs font-bold rounded-lg py-2" style={{ background: `${COLORS.challenge}14`, color: COLORS.challenge }}>Turn off</button>
+            </>
+          )}
+        </div>
+      )}
+
+      <button onClick={() => setExpanded(e => !e)}
+        className="fixed bottom-[76px] right-5 z-30 rounded-full shadow-2xl flex items-center gap-2 px-4 py-3 font-bold text-xs"
+        style={active ? { background: COLORS.robotics, color: COLORS.onAccent } : { background: COLORS.panel, color: COLORS.text, border: `1px solid ${COLORS.border}` }}>
+        <Volume2 size={16} /> Focus Meter{active ? ` \u00b7 ${level}` : ''}
+      </button>
+    </>
   );
 }
 
