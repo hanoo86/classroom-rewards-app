@@ -1050,13 +1050,10 @@ function LandingPage({ state, onPickStudent, onPickTeacher }) {
           <div key={i} className="star-twinkle" style={{ top: s.top, left: s.left, animationDelay: s.delay }} />
         ))}
         <div className="relative max-w-3xl mx-auto text-center">
-          <div className="relative w-16 h-16 mx-auto mb-5 rounded-full overflow-hidden animate-pop-in"
-            style={{ background: `radial-gradient(circle at 50% 40%, #1B2757, #0A0E22)`, boxShadow: `0 0 0 1px rgba(255,255,255,0.08), 0 0 30px ${COLORS.sidebarActive}22` }}>
-            <div className="star-twinkle" style={{ top: '20%', left: '25%', animationDelay: '0s' }} />
-            <div className="star-twinkle" style={{ top: '65%', left: '70%', animationDelay: '0.8s' }} />
-            <div className="star-twinkle" style={{ top: '25%', left: '68%', animationDelay: '1.4s' }} />
-            <img src="/najm-mascot.png" alt="Najm mascot: a smiling trophy on a stack of books, cheered on by two kids"
-              className="absolute inset-0 w-full h-full object-contain animate-float" />
+          <div className="relative w-32 h-32 sm:w-40 sm:h-40 mx-auto mb-5 flex items-center justify-center animate-pop-in">
+            <div className="absolute inset-0 rounded-full" style={{ background: `radial-gradient(circle, ${COLORS.sidebarActive}30, transparent 70%)`, filter: 'blur(10px)' }} />
+            <img src="/najm-logo.png" alt="Najm logo: a glowing gold star character"
+              className="relative w-full h-full object-contain animate-float" />
           </div>
           <div className="inline-flex items-center gap-1.5 rounded-full px-3 py-1 mb-5 text-[10.5px] font-black tracking-wide animate-fade-up" style={{ background: `${COLORS.sidebarActive}22`, color: COLORS.sidebarActive }}>
             <Star size={11} fill={COLORS.sidebarActive} /> EVERY STUDENT IS A STAR
