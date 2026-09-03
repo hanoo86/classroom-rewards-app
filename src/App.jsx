@@ -105,13 +105,41 @@ const BADGE_DEFS = [
   { id: 'bd9', name: 'Coding Explorer', icon: 'Trophy', type: 'academic', threshold: 100, criteria: 'Earn 100 academic points' },
 ];
 
+const REWARD_CATEGORIES = [
+  { id: 'privileges', label: 'Classroom Privileges', emoji: '\u{1F451}' },
+  { id: 'fun', label: 'Fun & Digital', emoji: '\u{1F3AE}' },
+  { id: 'vip', label: 'VIP / High XP', emoji: '\u{1F48E}' },
+  { id: 'limited', label: 'This Week Only', emoji: '\u{1F525}' },
+  { id: 'general', label: 'More Rewards', emoji: '\u{1F381}' },
+];
+
 const DEFAULT_REWARDS = [
-  { id: 'r1', icon: 'Armchair', name: 'Choose Your Seat', cost: 250, description: 'Pick your seat for one lesson.' },
-  { id: 'r2', icon: 'Code2', name: '10 Min Free Coding Time', cost: 150, description: 'Extra free coding time at the end of class.' },
-  { id: 'r3', icon: 'Bot', name: 'Robotics Team Leader', cost: 300, description: 'Lead the robotics team for one lesson.' },
-  { id: 'r4', icon: 'Target', name: 'Choose the Next Mini Challenge', cost: 200, description: 'Pick what the class works on next.' },
-  { id: 'r5', icon: 'Award', name: 'Special Digital Certificate', cost: 400, description: 'A certificate recognizing your progress.' },
-  { id: 'r6', icon: 'Star', name: 'Tech Assistant of the Day', cost: 350, description: 'Help the teacher run the lesson.' },
+  // --- existing rewards, unchanged name/cost/description — just tagged with a category so they slot into the new store layout
+  { id: 'r1', icon: 'Armchair', name: 'Choose Your Seat', cost: 250, description: 'Pick your seat for one lesson.', category: 'privileges', enabled: true, limitedQty: null },
+  { id: 'r2', icon: 'Code2', name: '10 Min Free Coding Time', cost: 150, description: 'Extra free coding time at the end of class.', category: 'fun', enabled: true, limitedQty: null },
+  { id: 'r3', icon: 'Bot', name: 'Robotics Team Leader', cost: 300, description: 'Lead the robotics team for one lesson.', category: 'privileges', enabled: true, limitedQty: null },
+  { id: 'r4', icon: 'Target', name: 'Choose the Next Mini Challenge', cost: 200, description: 'Pick what the class works on next.', category: 'privileges', enabled: true, limitedQty: null },
+  { id: 'r5', icon: 'Award', name: 'Special Digital Certificate', cost: 400, description: 'A certificate recognizing your progress.', category: 'general', enabled: true, limitedQty: null },
+  { id: 'r6', icon: 'Star', name: 'Tech Assistant of the Day', cost: 350, description: 'Help the teacher run the lesson.', category: 'privileges', enabled: true, limitedQty: null },
+  // --- new: Classroom Privileges
+  { id: 'r7', icon: 'Users', name: 'Choose Your Partner', cost: 200, description: 'Choose your partner for one activity.', emoji: '\u{1F451}', category: 'privileges', enabled: true, limitedQty: null },
+  { id: 'r8', icon: 'Flame', name: 'Choose the Warm-Up Activity', cost: 250, description: 'Choose the warm-up activity for the class.', emoji: '\u{1F451}', category: 'privileges', enabled: true, limitedQty: null },
+  { id: 'r9', icon: 'Crown', name: 'Be Teacher Assistant', cost: 300, description: 'Help the teacher during one lesson.', emoji: '\u{1F451}', category: 'privileges', enabled: true, limitedQty: null },
+  // --- new: Fun & Digital
+  { id: 'r10', icon: 'Code2', name: 'Choose a Class Game', cost: 300, description: 'Choose the game the class will play.', emoji: '\u{1F3AE}', category: 'fun', enabled: true, limitedQty: null },
+  // --- new: VIP / High XP (visually prestigious tier)
+  { id: 'v1', icon: 'Trophy', name: 'Lab VIP', cost: 500, description: 'Recognized as a Lab VIP for outstanding effort.', emoji: '\u{1F3C6}', category: 'vip', enabled: true, limitedQty: null },
+  { id: 'v2', icon: 'Crown', name: 'Tech Leader', cost: 750, description: 'A standing leadership title in class.', emoji: '\u{1F451}', category: 'vip', enabled: true, limitedQty: null },
+  { id: 'v3', icon: 'Award', name: 'Innovation Champion', cost: 1000, description: 'Recognized for standout creative problem-solving.', emoji: '\u{1F680}', category: 'vip', enabled: true, limitedQty: null },
+  { id: 'v4', icon: 'Bot', name: 'Robotics Master', cost: 1250, description: 'The top robotics recognition in class.', emoji: '\u{1F916}', category: 'vip', enabled: true, limitedQty: null },
+  { id: 'v5', icon: 'Star', name: 'Ultimate CS Legend', cost: 1500, description: 'The highest honor in the class.', emoji: '\u{1F48E}', category: 'vip', enabled: true, limitedQty: null },
+  // --- new: This Week Only (limited quantity — remaining slots are computed
+  // from redemption count vs. limitedQty, so "reset" just re-opens slots
+  // without ever deleting redemption history)
+  { id: 'l1', icon: 'Code2', name: 'Gaming Break', cost: 150, description: '10 minutes of approved game time.', emoji: '\u{1F3AE}', category: 'limited', enabled: true, limitedQty: 5, resetAt: null },
+  { id: 'l2', icon: 'Crown', name: 'Teacher Assistant', cost: 300, description: 'Help run one lesson this week.', emoji: '\u{1F451}', category: 'limited', enabled: true, limitedQty: 3, resetAt: null },
+  { id: 'l3', icon: 'Bot', name: 'Choose the Robotics Challenge', cost: 500, description: 'Pick this week\u2019s robotics challenge.', emoji: '\u{1F916}', category: 'limited', enabled: true, limitedQty: 1, resetAt: null },
+  { id: 'l4', icon: 'Award', name: 'Mystery Box', cost: 750, description: 'A surprise reward, revealed after redeeming.', emoji: '\u{1F381}', category: 'limited', enabled: true, limitedQty: 2, resetAt: null },
 ];
 
 const ICONS = { Shield, Users, Bot, Brain, Flame, Lightbulb, Crown, Wrench, Trophy, Armchair, Code2, Target, Award, Star };
@@ -196,7 +224,7 @@ function rowToClass(c) { return { id: c.id, name: c.name, classCode: c.class_cod
 function rowToBehaviorAssessment(a) { return { id: a.id, studentId: a.student_id, classId: a.class_id, date: a.created_at, ratings: a.ratings, comment: a.comment || '' }; }
 function rowToAcademicAssessment(a) { return { id: a.id, studentId: a.student_id, classId: a.class_id, date: a.created_at, scores: a.scores, comment: a.comment || '' }; }
 function rowToCompetition(c) { return { monthKey: c.month_key, weights: c.weights, results: c.results, winnerClassId: c.winner_class_id, closedAt: c.closed_at }; }
-function rowToRedemption(r) { return { id: r.id, studentId: r.student_id, rewardId: r.reward_id, date: r.created_at }; }
+function rowToRedemption(r) { return { id: r.id, studentId: r.student_id, rewardId: r.reward_id, cost: r.cost, date: r.created_at }; }
 function rowToReflection(r) { return { id: r.id, studentId: r.student_id, feeling: r.feeling, improvement: r.improvement, date: r.created_at }; }
 
 async function loadState() {
@@ -239,11 +267,15 @@ async function loadState() {
   const savedBehaviors = extra.behaviors || [];
   const savedBehaviorIds = new Set(savedBehaviors.map(b => b.id));
   const mergedBehaviors = [...savedBehaviors, ...DEFAULT_BEHAVIORS.filter(b => !savedBehaviorIds.has(b.id))];
+  const savedRewards = extra.rewards || [];
+  const savedRewardIds = new Set(savedRewards.map(r => r.id));
+  const mergedRewards = [...savedRewards, ...DEFAULT_REWARDS.filter(r => !savedRewardIds.has(r.id))];
 
   return {
     ...defaultState(),
     ...extra,
     behaviors: mergedBehaviors,
+    rewards: mergedRewards,
     classes: (classesR.data || []).map(rowToClass),
     students: (studentsR.data || []).map(rowToStudent),
     behaviorLog: (pointsR.data || []).map(rowToBehaviorLog),
@@ -378,9 +410,17 @@ function studentPayloadToState(payload) {
   const spentXP = {};
   (payload.redemptions || []).forEach(r => { spentXP[r.student_id] = (spentXP[r.student_id] || 0) + r.cost; });
   const extra = payload.schoolData || {};
+  const savedBehaviors = extra.behaviors || [];
+  const savedBehaviorIds = new Set(savedBehaviors.map(b => b.id));
+  const mergedBehaviors = [...savedBehaviors, ...DEFAULT_BEHAVIORS.filter(b => !savedBehaviorIds.has(b.id))];
+  const savedRewards = extra.rewards || [];
+  const savedRewardIds = new Set(savedRewards.map(r => r.id));
+  const mergedRewards = [...savedRewards, ...DEFAULT_REWARDS.filter(r => !savedRewardIds.has(r.id))];
   return {
     ...defaultState(),
     ...extra,
+    behaviors: mergedBehaviors,
+    rewards: mergedRewards,
     classes: (payload.classes || []).map(rowToClass),
     students: (payload.students || []).map(rowToStudent),
     behaviorLog: (payload.points || []).map(rowToBehaviorLog),
@@ -430,6 +470,28 @@ function weeklyXPTrend(state, studentId) {
 }
 function spendableXP(state, studentId) {
   return totalXP(state, studentId) - (state.spentXP[studentId] || 0);
+}
+// Remaining slots on a limited reward. Redemptions are never deleted — a
+// "reset" just moves resetAt forward, so only redemptions since the last
+// reset count against the cap. No new schema needed.
+function rewardRemaining(state, reward) {
+  if (reward.limitedQty == null) return null;
+  const since = reward.resetAt ? new Date(reward.resetAt).getTime() : 0;
+  const redeemed = state.redemptions.filter(r => r.rewardId === reward.id && new Date(r.date).getTime() >= since).length;
+  return Math.max(0, reward.limitedQty - redeemed);
+}
+function rewardAvailable(state, reward) {
+  if (reward.enabled === false) return false;
+  const remaining = rewardRemaining(state, reward);
+  return remaining === null || remaining > 0;
+}
+// The cheapest reward a student can't yet afford — used to drive the "X XP
+// until your next reward" progress bar.
+function nextLockedReward(state, studentId) {
+  const balance = spendableXP(state, studentId);
+  const locked = state.rewards.filter(r => rewardAvailable(state, r) && r.cost > balance);
+  if (!locked.length) return null;
+  return locked.sort((a, b) => a.cost - b.cost)[0];
 }
 function levelInfo(xp) {
   let current = LEVELS[0];
@@ -1471,11 +1533,12 @@ export default function App() {
   function studentRedeem(reward) {
     if (!studentSession) return;
     const { studentId, pin } = studentSession;
+    const balanceBefore = spendableXP(studentSession.state, studentId);
     dbStudentRedeem({ studentId, pin, rewardId: reward.id, rewardName: reward.name, cost: reward.cost })
       .then(() => dbStudentLogin(studentId, pin)).then(payload => {
         if (payload?.ok) setStudentSession({ state: studentPayloadToState(payload), studentId, pin });
       }).catch(e => setToast({ kind: 'reflect', title: 'Could not redeem', body: e.message }));
-    setToast({ kind: 'reward', title: '\u{1F381} Reward redeemed!', body: reward.name });
+    setToast({ kind: 'reward', title: `\u{1F389} Reward redeemed!`, body: `${reward.emoji ? reward.emoji + ' ' : ''}${reward.name} \u2014 ${reward.cost} XP spent, ${balanceBefore - reward.cost} XP remaining` });
   }
   function studentAddReflection(feeling, improvement) {
     if (!studentSession) return;
@@ -1703,10 +1766,11 @@ function StudentApp({ state, activeStudentId, setActiveStudentId, persist, setTo
     setToast({ kind: 'reflect', title: 'Reflection saved', body: 'Thanks for thinking about your lesson today.' });
   }
   function redeem(reward) {
-    if (spendableXP(state, student.id) < reward.cost) return;
+    const balanceBefore = spendableXP(state, student.id);
+    if (balanceBefore < reward.cost) return;
     if (onRedeem) { onRedeem(reward); return; }
     db(() => dbRedeem({ studentId: student.id, classId: student.classId, rewardId: reward.id, rewardName: reward.name, cost: reward.cost }));
-    setToast({ kind: 'reward', title: '\u{1F381} Reward redeemed!', body: reward.name });
+    setToast({ kind: 'reward', title: `\u{1F389} Reward redeemed!`, body: `${reward.emoji ? reward.emoji + ' ' : ''}${reward.name} \u2014 ${reward.cost} XP spent, ${balanceBefore - reward.cost} XP remaining` });
   }
 
   const sidebarHeader = (
@@ -1962,53 +2026,127 @@ function AchievementsTab({ state, student }) {
 
 function StoreTab({ state, student, onRedeem }) {
   const balance = spendableXP(state, student.id);
-  const history = state.redemptions.filter(r => r.studentId === student.id).slice(0, 5);
+  const history = state.redemptions.filter(r => r.studentId === student.id).slice(0, 6);
+  const nextReward = nextLockedReward(state, student.id);
+  const [confirming, setConfirming] = useState(null);
+
+  const visible = state.rewards.filter(r => r.enabled !== false);
+  const groups = REWARD_CATEGORIES.map(cat => ({ ...cat, items: visible.filter(r => (r.category || 'general') === cat.id) })).filter(g => g.items.length);
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <Card style={{ background: `linear-gradient(135deg, ${COLORS.panel}, ${COLORS.panelAlt})` }}>
-        <div className="flex items-center justify-between">
-          <div className="text-xs font-bold uppercase" style={{ color: COLORS.textFaint }}>Available to spend</div>
+        <div className="flex items-center justify-between mb-1">
+          <div className="text-xs font-bold uppercase" style={{ color: COLORS.textFaint }}>\u2B50 Your XP</div>
           <div className="text-xl font-black font-mono" style={{ color: COLORS.reward }}>{balance} XP</div>
         </div>
+        {nextReward && (
+          <div className="mt-2">
+            <div className="text-[11px] font-semibold mb-1" style={{ color: COLORS.textMuted }}>Progress to {nextReward.name}</div>
+            <div className="h-2.5 rounded-full overflow-hidden" style={{ background: COLORS.panelSoft }}>
+              <div className="h-full rounded-full" style={{ width: `${Math.min(100, Math.round((balance / nextReward.cost) * 100))}%`, background: COLORS.reward }} />
+            </div>
+            <div className="text-[10.5px] mt-1 font-semibold" style={{ color: COLORS.reward }}>{'\u{1F525}'} {nextReward.cost - balance} XP until {nextReward.name}</div>
+          </div>
+        )}
       </Card>
-      <SectionLabel icon={Gift} color={COLORS.reward}>Reward Store</SectionLabel>
-      <div className="grid sm:grid-cols-2 gap-3">
-        {state.rewards.map(r => {
-          const Icon = ICONS[r.icon] || Gift;
-          const affordable = balance >= r.cost;
-          return (
-            <Card key={r.id} className="flex flex-col gap-2">
-              <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: `${COLORS.reward}22` }}>
-                <Icon size={18} style={{ color: COLORS.reward }} />
-              </div>
-              <div className="text-sm font-bold">{r.name}</div>
-              <div className="text-[11px]" style={{ color: COLORS.textMuted }}>{r.description}</div>
-              <div className="flex items-center justify-between mt-1">
-                <span className="font-mono font-bold text-sm" style={{ color: COLORS.xp }}>{r.cost} XP</span>
-                <button disabled={!affordable} onClick={() => onRedeem(r)}
-                  className="text-xs font-bold px-3 py-1.5 rounded-lg disabled:opacity-30 transition"
-                  style={{ background: affordable ? COLORS.reward : COLORS.panelSoft, color: affordable ? COLORS.onAccent : COLORS.textFaint }}>
-                  {affordable ? 'Redeem' : 'Locked'}
-                </button>
-              </div>
-            </Card>
-          );
-        })}
-      </div>
+
+      {groups.map(g => (
+        <div key={g.id}>
+          <SectionLabel icon={Gift} color={COLORS.reward}>{g.emoji} {g.label}</SectionLabel>
+          <div className="grid sm:grid-cols-2 gap-3">
+            {g.items.map(r => (
+              <RewardCard key={r.id} reward={r} balance={balance} state={state} onRedeem={() => setConfirming(r)} />
+            ))}
+          </div>
+        </div>
+      ))}
+
       {history.length > 0 && (
         <div>
-          <SectionLabel>Redemption History</SectionLabel>
+          <SectionLabel>My Rewards</SectionLabel>
           <div className="space-y-1.5">
             {history.map(h => {
               const r = state.rewards.find(x => x.id === h.rewardId);
-              return <div key={h.id} className="text-xs rounded-lg px-3 py-2" style={{ background: COLORS.panelAlt, color: COLORS.textMuted }}>
-                {new Date(h.date).toLocaleDateString()} {'\u2014'} {r ? r.name : 'Reward'}
-              </div>;
+              return (
+                <div key={h.id} className="flex items-center justify-between text-xs rounded-lg px-3 py-2" style={{ background: COLORS.panelAlt, color: COLORS.textMuted }}>
+                  <span>{r?.emoji ? `${r.emoji} ` : ''}{r ? r.name : 'Reward'} <span style={{ color: COLORS.textFaint }}>{'\u2014'} {new Date(h.date).toLocaleDateString()}</span></span>
+                  <span className="font-mono font-bold" style={{ color: COLORS.reward }}>{h.cost ?? r?.cost ?? ''} XP</span>
+                </div>
+              );
             })}
           </div>
         </div>
       )}
+
+      {confirming && (
+        <RedeemConfirmModal reward={confirming} balance={balance}
+          onCancel={() => setConfirming(null)}
+          onConfirm={() => { onRedeem(confirming); setConfirming(null); }} />
+      )}
     </div>
+  );
+}
+
+function RewardCard({ reward: r, balance, state, onRedeem }) {
+  const Icon = ICONS[r.icon] || Gift;
+  const affordable = balance >= r.cost;
+  const remaining = rewardRemaining(state, r);
+  const soldOut = remaining !== null && remaining <= 0;
+  const isVip = r.category === 'vip';
+  const isLimited = r.category === 'limited';
+  const locked = !affordable || soldOut;
+
+  return (
+    <Card className="flex flex-col gap-2" style={isVip ? { background: `linear-gradient(135deg, ${COLORS.reward}18, ${COLORS.xp}10)`, borderColor: `${COLORS.reward}66` } : undefined}>
+      <div className="flex items-center justify-between">
+        <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: `${COLORS.reward}22` }}>
+          <Icon size={18} style={{ color: COLORS.reward }} />
+        </div>
+        {isVip && <span className="text-[10px] font-black px-2 py-0.5 rounded-full" style={{ background: `${COLORS.reward}22`, color: COLORS.reward }}>{'\u{1F48E}'} VIP</span>}
+        {isLimited && !soldOut && <span className="text-[10px] font-black px-2 py-0.5 rounded-full" style={{ background: `${COLORS.challenge}1A`, color: COLORS.challenge }}>{'\u{1F525}'} THIS WEEK</span>}
+      </div>
+      <div className="text-sm font-bold">{r.emoji ? `${r.emoji} ` : ''}{r.name}</div>
+      <div className="text-[11px]" style={{ color: COLORS.textMuted }}>{r.description}</div>
+      {isVip && !affordable && (
+        <div>
+          <div className="h-1.5 rounded-full overflow-hidden mb-1" style={{ background: COLORS.panelSoft }}>
+            <div className="h-full rounded-full" style={{ width: `${Math.min(100, Math.round((balance / r.cost) * 100))}%`, background: COLORS.reward }} />
+          </div>
+          <div className="text-[10.5px] font-semibold" style={{ color: COLORS.textFaint }}>{balance} / {r.cost} XP</div>
+        </div>
+      )}
+      {isLimited && !soldOut && <div className="text-[10.5px] font-bold" style={{ color: COLORS.challenge }}>{remaining} / {r.limitedQty} remaining</div>}
+      <div className="flex items-center justify-between mt-1">
+        <span className="font-mono font-bold text-sm" style={{ color: COLORS.xp }}>{r.cost} XP</span>
+        <button disabled={locked} onClick={onRedeem}
+          className="text-xs font-bold px-3 py-1.5 rounded-lg disabled:opacity-30 transition"
+          style={{ background: locked ? COLORS.panelSoft : COLORS.reward, color: locked ? COLORS.textFaint : COLORS.onAccent }}>
+          {soldOut ? 'Sold Out' : affordable ? 'Redeem' : 'Locked'}
+        </button>
+      </div>
+      {!affordable && !soldOut && <div className="text-[10.5px] font-semibold" style={{ color: COLORS.textFaint }}>{'\u{1F512}'} Need {r.cost - balance} more XP</div>}
+    </Card>
+  );
+}
+
+function RedeemConfirmModal({ reward, balance, onCancel, onConfirm }) {
+  return (
+    <ModalShell onClose={onCancel} title="Redeem Reward?">
+      <div className="text-center space-y-1 mb-4">
+        <div className="text-2xl">{reward.emoji || '\u{1F381}'}</div>
+        <div className="text-base font-black">{reward.name}</div>
+      </div>
+      <div className="rounded-xl border p-3 mb-4 space-y-1.5 text-sm" style={{ borderColor: COLORS.border, background: COLORS.panelAlt }}>
+        <div className="flex justify-between"><span style={{ color: COLORS.textMuted }}>Cost</span><span className="font-mono font-bold" style={{ color: COLORS.reward }}>{reward.cost} XP</span></div>
+        <div className="flex justify-between"><span style={{ color: COLORS.textMuted }}>Your XP</span><span className="font-mono font-bold">{balance} XP</span></div>
+        <div className="flex justify-between border-t pt-1.5" style={{ borderColor: COLORS.border }}><span style={{ color: COLORS.textMuted }}>After redemption</span><span className="font-mono font-bold" style={{ color: COLORS.xp }}>{balance - reward.cost} XP</span></div>
+      </div>
+      <div className="flex gap-2">
+        <button onClick={onCancel} className="flex-1 text-sm font-bold rounded-lg py-2.5" style={{ background: COLORS.panelSoft, color: COLORS.textMuted }}>Cancel</button>
+        <button onClick={onConfirm} className="flex-1 text-sm font-bold rounded-lg py-2.5" style={{ background: COLORS.reward, color: COLORS.onAccent }}>Redeem</button>
+      </div>
+    </ModalShell>
   );
 }
 
@@ -2378,41 +2516,86 @@ function StoreManageTab({ state, persist }) {
   const [name, setName] = useState('');
   const [cost, setCost] = useState(200);
   const [description, setDescription] = useState('');
+  const [category, setCategory] = useState('general');
+  const [emoji, setEmoji] = useState('');
+  const [limited, setLimited] = useState(false);
+  const [qty, setQty] = useState(5);
 
   function addReward() {
     if (!name.trim()) return;
-    persist(prev => ({ ...prev, rewards: [...prev.rewards, { id: uid('r'), icon: 'Star', name: name.trim(), cost: Number(cost), description }] }));
-    setName(''); setDescription(''); setCost(200);
+    persist(prev => ({
+      ...prev, rewards: [...prev.rewards, {
+        id: uid('r'), icon: 'Star', name: name.trim(), cost: Number(cost), description, category,
+        emoji: emoji.trim() || undefined, enabled: true, limitedQty: limited ? Number(qty) : null, resetAt: null,
+      }]
+    }));
+    setName(''); setDescription(''); setCost(200); setCategory('general'); setEmoji(''); setLimited(false); setQty(5);
   }
   function removeReward(id) { persist(prev => ({ ...prev, rewards: prev.rewards.filter(r => r.id !== id) })); }
-  function updateCost(id, val) { persist(prev => ({ ...prev, rewards: prev.rewards.map(r => r.id === id ? { ...r, cost: Number(val) } : r) })); }
+  function updateReward(id, patch) { persist(prev => ({ ...prev, rewards: prev.rewards.map(r => r.id === id ? { ...r, ...patch } : r) })); }
+  function resetQuantity(id) { updateReward(id, { resetAt: new Date().toISOString() }); }
 
   return (
     <div className="space-y-5">
       <Card>
         <SectionLabel icon={Plus} color={COLORS.reward}>Add a reward</SectionLabel>
         <div className="space-y-3">
-          <Field label="Name"><input value={name} onChange={e => setName(e.target.value)} style={inputStyle} /></Field>
+          <div className="grid grid-cols-[1fr_60px] gap-3">
+            <Field label="Name"><input value={name} onChange={e => setName(e.target.value)} style={inputStyle} /></Field>
+            <Field label="Emoji"><input value={emoji} onChange={e => setEmoji(e.target.value)} placeholder="\u{1F381}" style={inputStyle} /></Field>
+          </div>
           <div className="grid grid-cols-[1fr_100px] gap-3">
             <Field label="Description"><input value={description} onChange={e => setDescription(e.target.value)} style={inputStyle} /></Field>
             <Field label="XP cost"><input type="number" value={cost} onChange={e => setCost(e.target.value)} style={inputStyle} /></Field>
           </div>
+          <Field label="Category">
+            <select value={category} onChange={e => setCategory(e.target.value)} style={inputStyle}>
+              {REWARD_CATEGORIES.filter(c => c.id !== 'limited').map(c => <option key={c.id} value={c.id}>{c.emoji} {c.label}</option>)}
+            </select>
+          </Field>
+          <label className="flex items-center gap-2 text-xs font-semibold" style={{ color: COLORS.textMuted }}>
+            <input type="checkbox" checked={limited} onChange={e => setLimited(e.target.checked)} />
+            Limited quantity this week
+          </label>
+          {limited && (
+            <Field label="Available quantity"><input type="number" min={1} value={qty} onChange={e => setQty(e.target.value)} style={inputStyle} /></Field>
+          )}
           <button onClick={addReward} className="w-full font-bold text-xs rounded-lg py-2.5" style={{ background: COLORS.reward, color: COLORS.onAccent }}>Add to store</button>
         </div>
       </Card>
       <div>
         <SectionLabel icon={Gift} color={COLORS.reward}>Store items</SectionLabel>
         <div className="space-y-2">
-          {state.rewards.map(r => (
-            <div key={r.id} className="flex items-center gap-3 rounded-xl border px-3.5 py-2.5" style={{ borderColor: COLORS.border, background: COLORS.panel }}>
-              <div className="flex-1 min-w-0">
-                <div className="text-sm font-semibold truncate">{r.name}</div>
-                <div className="text-[11px] truncate" style={{ color: COLORS.textMuted }}>{r.description}</div>
+          {state.rewards.map(r => {
+            const cat = REWARD_CATEGORIES.find(c => c.id === (r.category || 'general')) || REWARD_CATEGORIES[REWARD_CATEGORIES.length - 1];
+            const remaining = rewardRemaining(state, r);
+            const enabled = r.enabled !== false;
+            return (
+              <div key={r.id} className="rounded-xl border px-3.5 py-2.5 space-y-2" style={{ borderColor: COLORS.border, background: COLORS.panel, opacity: enabled ? 1 : 0.55 }}>
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-semibold truncate flex items-center gap-1.5">
+                      {r.emoji && <span>{r.emoji}</span>} {r.name}
+                      <span className="text-[9.5px] font-black px-1.5 py-0.5 rounded-full shrink-0" style={{ background: `${COLORS.reward}18`, color: COLORS.reward }}>{cat.label}</span>
+                    </div>
+                    <input defaultValue={r.description} onBlur={e => updateReward(r.id, { description: e.target.value })}
+                      className="text-[11px] w-full bg-transparent outline-none border-b border-transparent focus:border-current" style={{ color: COLORS.textMuted }} />
+                  </div>
+                  <input type="number" defaultValue={r.cost} onBlur={e => updateReward(r.id, { cost: Number(e.target.value) })} className="w-16 text-xs text-right font-mono rounded-md px-2 py-1 border shrink-0" style={{ background: COLORS.panelSoft, borderColor: COLORS.border, color: COLORS.xp }} />
+                  <button onClick={() => updateReward(r.id, { enabled: !enabled })} aria-label={enabled ? `Disable ${r.name}` : `Enable ${r.name}`} className="shrink-0 text-[10px] font-bold px-2 py-1 rounded-md" style={{ background: enabled ? `${COLORS.behavior}18` : COLORS.panelSoft, color: enabled ? COLORS.behavior : COLORS.textFaint }}>
+                    {enabled ? 'On' : 'Off'}
+                  </button>
+                  <button onClick={() => removeReward(r.id)} aria-label={`Delete reward: ${r.name}`} className="shrink-0" style={{ color: COLORS.textFaint }}><X size={15} /></button>
+                </div>
+                {r.limitedQty != null && (
+                  <div className="flex items-center justify-between text-[10.5px] font-semibold pl-0.5" style={{ color: COLORS.challenge }}>
+                    <span>{'\u{1F525}'} {remaining} / {r.limitedQty} remaining this week</span>
+                    <button onClick={() => resetQuantity(r.id)} className="font-bold underline">Reset quantity</button>
+                  </div>
+                )}
               </div>
-              <input type="number" defaultValue={r.cost} onBlur={e => updateCost(r.id, e.target.value)} className="w-16 text-xs text-right font-mono rounded-md px-2 py-1 border shrink-0" style={{ background: COLORS.panelSoft, borderColor: COLORS.border, color: COLORS.xp }} />
-              <button onClick={() => removeReward(r.id)} aria-label={`Delete reward: ${r.name}`} className="shrink-0" style={{ color: COLORS.textFaint }}><X size={15} /></button>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
       {state.redemptions.length > 0 && (
@@ -2422,9 +2605,12 @@ function StoreManageTab({ state, persist }) {
             {state.redemptions.slice(0, 8).map(h => {
               const st = state.students.find(s => s.id === h.studentId);
               const r = state.rewards.find(x => x.id === h.rewardId);
-              return <div key={h.id} className="text-xs rounded-lg px-3 py-2" style={{ background: COLORS.panelAlt, color: COLORS.textMuted }}>
-                {new Date(h.date).toLocaleDateString()} {'\u2014'} <b style={{ color: COLORS.text }}>{st?.name}</b> redeemed {r?.name || 'a reward'}
-              </div>;
+              return (
+                <div key={h.id} className="flex items-center justify-between text-xs rounded-lg px-3 py-2" style={{ background: COLORS.panelAlt, color: COLORS.textMuted }}>
+                  <span>{new Date(h.date).toLocaleDateString()} {'\u2014'} <b style={{ color: COLORS.text }}>{st?.name}</b> redeemed {r?.name || 'a reward'}</span>
+                  <span className="font-mono font-bold shrink-0" style={{ color: COLORS.reward }}>{h.cost ?? r?.cost ?? ''} XP</span>
+                </div>
+              );
             })}
           </div>
         </div>
