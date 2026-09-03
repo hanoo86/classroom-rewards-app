@@ -1712,7 +1712,8 @@ export default function App() {
               <CreateFirstClassScreen onCreate={createFirstClass} />
             )
           ) : (
-            <TeacherApp state={state} persist={persist} classId={effectiveClassId} email={email} setToast={setToast} db={runDb} session={session} />
+            <TeacherApp state={state} persist={persist} classId={effectiveClassId} email={email} setToast={setToast} db={runDb}
+              session={session} manageableClasses={manageableClasses} onSwitchClass={setQuickClassId} />
           )
         )}
         {role === 'admin' && session && isAdmin && (
@@ -2214,11 +2215,12 @@ function LeaderboardTab({ state, student }) {
 
 /* --------------------------------- Teacher App ----------------------------------- */
 
-function TeacherApp({ state, persist, classId, email, setToast, db, session }) {
+function TeacherApp({ state, persist, classId, email, setToast, db, session, manageableClasses, onSwitchClass }) {
   const [tab, setTab] = useState('overview');
   const scoped = { ...state, students: classId ? state.students.filter(s => s.classId === classId) : state.students };
   const tabs = [
     { id: 'overview', label: 'Overview', icon: LayoutGrid },
+    { id: 'classes', label: 'My Classes', icon: Building2 },
     { id: 'assessments', label: 'Assessments', icon: ClipboardList },
     { id: 'challenges', label: 'Challenges', icon: ListChecks },
     { id: 'missions', label: 'Missions', icon: Target },
@@ -2250,12 +2252,78 @@ function TeacherApp({ state, persist, classId, email, setToast, db, session }) {
         </div>
         <div className="md:hidden"><NavTabs tabs={tabs} active={tab} onChange={setTab} accent={COLORS.robotics} /></div>
         {tab === 'overview' && <OverviewTab state={scoped} persist={persist} classId={classId} db={db} session={session} />}
+        {tab === 'classes' && <TeacherClassesTab state={state} classes={manageableClasses || []} activeClassId={classId} db={db} onSwitch={onSwitchClass} />}
         {tab === 'assessments' && <AssessmentsTab state={scoped} persist={persist} classId={classId} email={email} setToast={setToast} db={db} session={session} />}
         {tab === 'challenges' && <ChallengesTab state={state} persist={persist} classId={classId} scopedStudents={scoped.students} isAdmin={!classId} db={db} session={session} />}
         {tab === 'missions' && <MissionsTab state={scoped} persist={persist} classId={classId} db={db} session={session} />}
         {tab === 'badges' && <BadgesTab state={scoped} />}
         {tab === 'store' && <StoreManageTab state={scoped} persist={persist} />}
         {tab === 'analytics' && <AnalyticsTab state={scoped} />}
+      </div>
+    </div>
+  );
+}
+
+// A regular teacher's own class list — separate from AdminClassesTab, which
+// manages every class across the whole school. `classes` here is already
+// RLS-scoped server-side to just this teacher's own rows, so nothing further
+// to filter client-side; this tab is what lets a teacher create a *second*
+// class themselves instead of only ever having the one from onboarding.
+function TeacherClassesTab({ state, classes, activeClassId, db, onSwitch }) {
+  const [newClassName, setNewClassName] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  async function addClass() {
+    if (!newClassName.trim() || busy) return;
+    setBusy(true);
+    const ok = await db(() => dbAddClass(newClassName.trim()));
+    setBusy(false);
+    if (ok) setNewClassName('');
+  }
+  function removeClass(id) { db(() => dbRemoveClass(id)); }
+
+  return (
+    <div className="space-y-5">
+      <Card>
+        <SectionLabel icon={Plus} color={COLORS.robotics}>Create another class</SectionLabel>
+        <div className="text-xs mb-2" style={{ color: COLORS.textMuted }}>Each class gets its own class code to share with that group of students.</div>
+        <div className="flex gap-2">
+          <input value={newClassName} onChange={e => setNewClassName(e.target.value)} onKeyDown={e => e.key === 'Enter' && addClass()}
+            placeholder="e.g. Grade 8 Robotics" style={inputStyle} />
+          <button onClick={addClass} disabled={!newClassName.trim() || busy} className="text-xs font-bold rounded-lg px-3 shrink-0 disabled:opacity-50" style={{ background: COLORS.robotics, color: COLORS.onAccent }}>
+            {busy ? 'Creating\u2026' : 'Create'}
+          </button>
+        </div>
+      </Card>
+
+      <div>
+        <SectionLabel icon={Building2} color={COLORS.robotics}>My Classes</SectionLabel>
+        <div className="space-y-2">
+          {classes.map(c => {
+            const isActive = c.id === activeClassId;
+            return (
+              <div key={c.id} className="flex items-center justify-between gap-2 rounded-xl border px-3.5 py-2.5" style={isActive ? { borderColor: `${COLORS.robotics}66`, background: `${COLORS.robotics}0F` } : { borderColor: COLORS.border, background: COLORS.panel }}>
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold min-w-0 truncate flex items-center gap-1.5">
+                    {c.name}
+                    {isActive && <span className="text-[9.5px] font-black px-1.5 py-0.5 rounded-full" style={{ background: `${COLORS.robotics}22`, color: COLORS.robotics }}>Viewing</span>}
+                    <span className="text-[11px] font-normal" style={{ color: COLORS.textFaint }}>({studentsInClass(state, c.id).length} students, {classPointsTotal(state, c.id)} pts)</span>
+                  </div>
+                  {c.classCode && <ClassCodeBadge code={c.classCode} />}
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {!isActive && (
+                    <button onClick={() => onSwitch && onSwitch(c.id)} className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg" style={{ background: COLORS.panelSoft, color: COLORS.text }}>
+                      Switch to
+                    </button>
+                  )}
+                  <button onClick={() => removeClass(c.id)} aria-label={`Delete class: ${c.name}`} style={{ color: COLORS.textFaint }}><Trash2 size={14} /></button>
+                </div>
+              </div>
+            );
+          })}
+          {classes.length === 0 && <div className="text-xs" style={{ color: COLORS.textFaint }}>No classes yet.</div>}
+        </div>
       </div>
     </div>
   );
