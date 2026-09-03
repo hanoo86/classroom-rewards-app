@@ -468,6 +468,23 @@ function weeklyXPTrend(state, studentId) {
   }).reduce((s, l) => s + l.points, 0);
   return { thisWeek, lastWeek, delta: thisWeek - lastWeek };
 }
+// Average XP earned per student, per week, for the last `weeks` weeks — used
+// to show a class trend that's fair to compare regardless of class size.
+function classWeeklyTrend(state, classId, weeks = 8) {
+  const day = 86400000;
+  const now = Date.now();
+  const studs = studentsInClass(state, classId);
+  const studentIds = new Set(studs.map(s => s.id));
+  const logs = state.behaviorLog.filter(l => studentIds.has(l.studentId));
+  const buckets = [];
+  for (let i = weeks - 1; i >= 0; i--) {
+    const end = now - i * 7 * day;
+    const start = end - 7 * day;
+    const sum = logs.filter(l => { const t = new Date(l.date).getTime(); return t > start && t <= end; }).reduce((s, l) => s + l.points, 0);
+    buckets.push({ weekStart: new Date(start).toISOString(), avg: studs.length ? Math.round((sum / studs.length) * 10) / 10 : 0 });
+  }
+  return buckets;
+}
 function spendableXP(state, studentId) {
   return totalXP(state, studentId) - (state.spentXP[studentId] || 0);
 }
@@ -769,6 +786,31 @@ function Bar({ value, color, height = 8 }) {
     <div className="rounded-full overflow-hidden" style={{ height, background: COLORS.panelSoft }}>
       <div className="h-full rounded-full transition-all duration-500" style={{ width: `${Math.min(100, value)}%`, background: color }} />
     </div>
+  );
+}
+
+// Small inline SVG line chart — no charting library needed for a single trend line.
+function TrendChart({ points, color, height = 64, formatLabel }) {
+  const w = 280;
+  const h = height;
+  const pad = 6;
+  const max = Math.max(1, ...points.map(p => p.avg));
+  const min = Math.min(0, ...points.map(p => p.avg));
+  const range = max - min || 1;
+  const step = points.length > 1 ? (w - pad * 2) / (points.length - 1) : 0;
+  const coords = points.map((p, i) => ({
+    x: pad + i * step,
+    y: pad + (1 - (p.avg - min) / range) * (h - pad * 2),
+    ...p,
+  }));
+  const path = coords.map((c, i) => `${i === 0 ? 'M' : 'L'} ${c.x.toFixed(1)} ${c.y.toFixed(1)}`).join(' ');
+  const areaPath = `${path} L ${coords[coords.length - 1]?.x.toFixed(1)} ${h - pad} L ${coords[0]?.x.toFixed(1)} ${h - pad} Z`;
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={h} preserveAspectRatio="none">
+      <path d={areaPath} fill={`${color}18`} stroke="none" />
+      <path d={path} fill="none" stroke={color} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+      {coords.map((c, i) => <circle key={i} cx={c.x} cy={c.y} r={i === coords.length - 1 ? 3 : 2} fill={color} />)}
+    </svg>
   );
 }
 
@@ -2272,6 +2314,10 @@ function TeacherApp({ state, persist, classId, email, setToast, db, session, man
 function TeacherClassesTab({ state, classes, activeClassId, db, onSwitch }) {
   const [newClassName, setNewClassName] = useState('');
   const [busy, setBusy] = useState(false);
+  const [expanded, setExpanded] = useState(null);
+  const [studentName, setStudentName] = useState('');
+  const [studentAge, setStudentAge] = useState('middle');
+  const [addingStudent, setAddingStudent] = useState(false);
 
   async function addClass() {
     if (!newClassName.trim() || busy) return;
@@ -2281,6 +2327,13 @@ function TeacherClassesTab({ state, classes, activeClassId, db, onSwitch }) {
     if (ok) setNewClassName('');
   }
   function removeClass(id) { db(() => dbRemoveClass(id)); }
+  async function addStudent(classId) {
+    if (!studentName.trim() || addingStudent) return;
+    setAddingStudent(true);
+    const ok = await db(() => dbAddStudent({ name: studentName.trim(), ageGroup: studentAge, classId }));
+    setAddingStudent(false);
+    if (ok) setStudentName('');
+  }
 
   return (
     <div className="space-y-5">
@@ -2301,24 +2354,66 @@ function TeacherClassesTab({ state, classes, activeClassId, db, onSwitch }) {
         <div className="space-y-2">
           {classes.map(c => {
             const isActive = c.id === activeClassId;
+            const isOpen = expanded === c.id;
+            const trend = isOpen ? classWeeklyTrend(state, c.id, 8) : null;
             return (
-              <div key={c.id} className="flex items-center justify-between gap-2 rounded-xl border px-3.5 py-2.5" style={isActive ? { borderColor: `${COLORS.robotics}66`, background: `${COLORS.robotics}0F` } : { borderColor: COLORS.border, background: COLORS.panel }}>
-                <div className="min-w-0">
-                  <div className="text-sm font-semibold min-w-0 truncate flex items-center gap-1.5">
-                    {c.name}
-                    {isActive && <span className="text-[9.5px] font-black px-1.5 py-0.5 rounded-full" style={{ background: `${COLORS.robotics}22`, color: COLORS.robotics }}>Viewing</span>}
-                    <span className="text-[11px] font-normal" style={{ color: COLORS.textFaint }}>({studentsInClass(state, c.id).length} students, {classPointsTotal(state, c.id)} pts)</span>
+              <div key={c.id} className="rounded-xl border overflow-hidden" style={isActive ? { borderColor: `${COLORS.robotics}66` } : { borderColor: COLORS.border }}>
+                <button onClick={() => setExpanded(isOpen ? null : c.id)}
+                  className="w-full flex items-center justify-between gap-2 px-3.5 py-2.5 text-left" style={{ background: isActive ? `${COLORS.robotics}0F` : COLORS.panel }}>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <ChevronRight size={14} style={{ color: COLORS.textFaint, transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s', flexShrink: 0 }} />
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold min-w-0 truncate flex items-center gap-1.5">
+                        {c.name}
+                        {isActive && <span className="text-[9.5px] font-black px-1.5 py-0.5 rounded-full" style={{ background: `${COLORS.robotics}22`, color: COLORS.robotics }}>Viewing</span>}
+                        <span className="text-[11px] font-normal" style={{ color: COLORS.textFaint }}>({studentsInClass(state, c.id).length} students, {classPointsTotal(state, c.id)} pts)</span>
+                      </div>
+                      {c.classCode && <ClassCodeBadge code={c.classCode} />}
+                    </div>
                   </div>
-                  {c.classCode && <ClassCodeBadge code={c.classCode} />}
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  {!isActive && (
-                    <button onClick={() => onSwitch && onSwitch(c.id)} className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg" style={{ background: COLORS.panelSoft, color: COLORS.text }}>
-                      Switch to
-                    </button>
-                  )}
-                  <button onClick={() => removeClass(c.id)} aria-label={`Delete class: ${c.name}`} style={{ color: COLORS.textFaint }}><Trash2 size={14} /></button>
-                </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {!isActive && (
+                      <span onClick={e => { e.stopPropagation(); onSwitch && onSwitch(c.id); }} className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg cursor-pointer" style={{ background: COLORS.panelSoft, color: COLORS.text }}>
+                        Switch to
+                      </span>
+                    )}
+                    <span onClick={e => { e.stopPropagation(); removeClass(c.id); }} aria-label={`Delete class: ${c.name}`} className="cursor-pointer" style={{ color: COLORS.textFaint }}><Trash2 size={14} /></span>
+                  </div>
+                </button>
+                {isOpen && (
+                  <div className="px-3.5 pb-4 pt-1 space-y-4" style={{ background: COLORS.panelSoft }}>
+                    <div>
+                      <div className="text-[10.5px] font-bold uppercase tracking-wide mb-2" style={{ color: COLORS.textFaint }}>Add a student to {c.name}</div>
+                      <div className="flex gap-2">
+                        <input value={studentName} onChange={e => setStudentName(e.target.value)} onKeyDown={e => e.key === 'Enter' && addStudent(c.id)}
+                          placeholder="Student name" style={inputStyle} />
+                        <select value={studentAge} onChange={e => setStudentAge(e.target.value)} style={{ ...inputStyle, width: 110, flexShrink: 0 }}>
+                          <option value="primary">Primary</option>
+                          <option value="middle">Middle</option>
+                          <option value="high">High</option>
+                        </select>
+                        <button onClick={() => addStudent(c.id)} disabled={!studentName.trim() || addingStudent} className="text-xs font-bold rounded-lg px-3 shrink-0 disabled:opacity-50" style={{ background: COLORS.behavior, color: COLORS.onAccent }}>
+                          {addingStudent ? '\u2026' : 'Add'}
+                        </button>
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-[10.5px] font-bold uppercase tracking-wide mb-2" style={{ color: COLORS.textFaint }}>Performance trend {'\u2014'} avg XP/student per week</div>
+                      {trend && trend.some(p => p.avg !== 0) ? (
+                        <div className="rounded-lg border p-2" style={{ borderColor: COLORS.border, background: COLORS.panel }}>
+                          <TrendChart points={trend} color={COLORS.robotics} />
+                          <div className="flex justify-between text-[9.5px] mt-1" style={{ color: COLORS.textFaint }}>
+                            <span>8 weeks ago</span><span>This week</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-xs rounded-lg border px-3 py-3 text-center" style={{ borderColor: COLORS.border, color: COLORS.textFaint }}>
+                          Not enough activity yet to show a trend.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })}
