@@ -6,10 +6,10 @@ import {
   Lightbulb, Bot, Armchair, Code2, Star, Lock, Zap, BarChart3, Gift,
   LayoutGrid, Medal, ClipboardList, LogOut, LogIn,
   Settings, Bell, GraduationCap, ShieldCheck, Download, Printer,
-  CalendarDays, UserPlus, Building2, Percent, ListChecks, Trash2, Shuffle, KeyRound, ChevronDown, Volume2,
-  AlertCircle, Activity
+  CalendarDays, UserPlus, Building2, Percent, ListChecks, Trash2, Shuffle, KeyRound, ChevronDown, Volume2
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 /* ---------------------------------- palette --------------------------------- */
 
@@ -203,26 +203,10 @@ function defaultState() {
     notifications: [], // { id, scope:'student'|'class'|'broadcast', targetId, message, date, read }
     competitions: [], // finalized monthly snapshots: { monthKey, weights, results:[...], winnerClassId, closedAt }
     competitionConfig: { weights: DEFAULT_COMPETITION_WEIGHTS },
-    // 🔌 NEW FEATURE 2: Timetable & Reminders
-    timetable: {
-      periods: [
-        { id: 'p1', startTime: '08:30', endTime: '09:15', subject: 'Math', classId: null },
-        { id: 'p2', startTime: '09:15', endTime: '10:00', subject: 'Science', classId: null },
-        { id: 'p3', startTime: '10:00', endTime: '10:45', subject: 'Robotics', classId: null },
-        { id: 'p4', startTime: '11:00', endTime: '11:45', subject: 'Coding', classId: null },
-        { id: 'p5', startTime: '12:00', endTime: '12:45', subject: 'English', classId: null },
-      ],
-      alarmMinutesBeforeEnd: 5,
-      alarmAcknowledged: {},
-    },
-    // 🔌 NEW FEATURE 4: Seating Plans
-    seatingPlans: {
-      layout: 'default',
-      pairs: [],
-      groups: [],
-    },
-    // 🔌 NEW FEATURE 3: Attitude Report Drafts
-    attitudeReportDraft: null,
+    // --- redesign additions ---
+    studentAvatars: {},      // { [studentId]: avatarProps }
+    classGenderConfig: {},   // { [classId]: 'boys'|'girls'|'mixed' }
+    rewardImages: {},        // { [rewardId]: { imageUrl, displayMode } }
   };
 }
 
@@ -599,49 +583,6 @@ function autoAwardBadges(state) {
   });
   return next;
 }
-
-// 🔌 Utility functions for new features
-function subtractMinutes(timeStr, mins) {
-  const [h, m] = timeStr.split(':').map(Number);
-  const totalMins = h * 60 + m - mins;
-  const newH = Math.floor(totalMins / 60);
-  const newM = totalMins % 60;
-  return `${String(newH).padStart(2, '0')}:${String(newM).padStart(2, '0')}`;
-}
-
-function isTimeInPeriod(time, startTime, endTime) {
-  const [th, tm] = time.split(':').map(Number);
-  const [sh, sm] = startTime.split(':').map(Number);
-  const [eh, em] = endTime.split(':').map(Number);
-  const totalTime = th * 60 + tm;
-  const startMins = sh * 60 + sm;
-  const endMins = eh * 60 + em;
-  return totalTime >= startMins && totalTime < endMins;
-}
-
-function generatePairs(students) {
-  const pairs = [];
-  for (let i = 0; i < students.length; i += 2) {
-    pairs.push({
-      id: `pair_${i}`,
-      studentIds: [students[i].id, ...(students[i + 1] ? [students[i + 1].id] : [])],
-    });
-  }
-  return pairs;
-}
-
-function generateGroups(students, groupSize = 4) {
-  const groups = [];
-  for (let i = 0; i < students.length; i += groupSize) {
-    groups.push({
-      id: `group_${i}`,
-      studentIds: students.slice(i, i + groupSize).map(s => s.id),
-      tableNumber: Math.floor(i / groupSize) + 1,
-    });
-  }
-  return groups;
-}
-
 /* ------------------------- classes, assessments, competition ------------------------- */
 
 function studentsInClass(state, classId) { return state.students.filter(s => s.classId === classId); }
@@ -1537,809 +1478,609 @@ function ClassPickerScreen({ state, classes, onPick }) {
   );
 }
 
-// 🔌 ==================== FEATURE 1: BULK AWARD MODE ====================
-function BulkAwardMode({ state, students, onAward, onCancel, COLORS }) {
-  const [selected, setSelected] = useState(new Set());
-  const [selectAll, setSelectAll] = useState(false);
-  const [selectedBehavior, setSelectedBehavior] = useState(null);
-  const [customPoints, setCustomPoints] = useState('');
-  const inputStyle = {
-    width: '100%',
-    fontSize: '14px',
-    padding: '8px 12px',
-    borderRadius: '8px',
-    border: `1px solid ${COLORS.border}`,
-    background: COLORS.panel,
-    color: COLORS.text,
-  };
+/* ============================================================
+   REDESIGN COMPONENTS — Avatars, Dashboard, Homepage
+   ============================================================ */
 
-  const toggleStudent = (id) => {
-    const next = new Set(selected);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
-    setSelected(next);
-    setSelectAll(false);
-  };
+function AvatarClassroomTab({ state, persist, classId, COLORS, onAward }) {
+  const students = classId ? state.students.filter(s => s.classId === classId) : state.students;
 
-  const toggleSelectAll = () => {
-    if (selectAll) {
-      setSelected(new Set());
-      setSelectAll(false);
-    } else {
-      setSelected(new Set(students.map(s => s.id)));
-      setSelectAll(true);
-    }
-  };
-
-  const awardToGroup = () => {
-    if (!selectedBehavior || selected.size === 0) return;
-    const behavior = state.behaviors.find(b => b.id === selectedBehavior);
-    if (!behavior) return;
-    const points = customPoints !== '' ? Number(customPoints) : behavior.points;
-    onAward({
-      studentIds: Array.from(selected),
-      behaviorIds: [selectedBehavior],
-      pointsOverride: points,
-      comment: 'Bulk group award',
+  // Auto-generate missing avatars
+  React.useEffect(() => {
+    const missing = students.filter(s => !state.studentAvatars[s.id]);
+    if (missing.length === 0) return;
+    const newAvatars = { ...state.studentAvatars };
+    missing.forEach(s => {
+      const gender = state.classGenderConfig?.[s.classId] === 'girls' ? 'female'
+        : state.classGenderConfig?.[s.classId] === 'boys' ? 'male'
+        : Math.random() > 0.5 ? 'male' : 'female';
+      newAvatars[s.id] = generateAvatar(s.id, gender);
     });
-    setSelected(new Set());
-    setSelectAll(false);
-    setSelectedBehavior(null);
-    setCustomPoints('');
+    persist(prev => ({ ...prev, studentAvatars: newAvatars }));
+  }, [students.length]);
+
+  const handleAward = (studentId, behaviorId, points) => {
+    onAward({ studentIds: [studentId], behaviorIds: [behaviorId], pointsOverride: points, comment: '' });
   };
 
-  const positives = state.behaviors.filter(b => b.type === 'positive');
-  const selectedCount = selected.size;
-
   return (
-    <div className="space-y-4 pb-20">
-      <div className="flex items-center justify-between">
-        <div className="text-base font-black" style={{ color: COLORS.text }}>
-          📦 Bulk Award Mode
-        </div>
-        <button
-          onClick={onCancel}
-          className="text-xs font-bold px-3 py-1.5 rounded-lg"
-          style={{ background: COLORS.panelAlt, color: COLORS.textMuted }}
-        >
-          ✕ Exit
-        </button>
+    <div>
+      <div style={{ marginBottom: 20 }}>
+        <h2 style={{ fontSize: 20, fontWeight: 'bold', color: COLORS.text, margin: '0 0 4px' }}>🎭 Student Avatars</h2>
+        <p style={{ margin: 0, fontSize: 12, color: COLORS.textMuted }}>Click any avatar to award points instantly</p>
       </div>
 
-      <Card style={{ background: COLORS.panelSoft, borderColor: COLORS.border }}>
-        <div className="font-semibold" style={{ color: COLORS.text }}>
-          {selectedCount} of {students.length} selected
-        </div>
-        <div style={{ color: COLORS.textMuted }} className="text-xs mt-1">
-          {selectedCount > 0
-            ? `${selectedCount} student${selectedCount !== 1 ? 's' : ''} will receive the award`
-            : 'Select students below'}
-        </div>
-      </Card>
-
-      <div>
-        <label className="text-xs font-bold uppercase" style={{ color: COLORS.textFaint }}>
-          Recognize for:
-        </label>
-        <div className="mt-2 grid grid-cols-2 gap-2 max-h-40 overflow-y-auto">
-          {positives.map(b => (
-            <button
-              key={b.id}
-              onClick={() => setSelectedBehavior(b.id)}
-              className="text-left text-xs rounded-lg border p-2.5 transition"
-              style={{
-                background:
-                  selectedBehavior === b.id ? `${COLORS.robotics}22` : COLORS.panel,
-                borderColor:
-                  selectedBehavior === b.id ? COLORS.robotics : COLORS.border,
-                color: COLORS.text,
-              }}
-            >
-              <div className="font-semibold truncate">{b.name}</div>
-              <div style={{ color: COLORS.textMuted }} className="text-[10px]">
-                +{b.points} XP
-              </div>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {selectedBehavior && (
-        <div>
-          <label className="text-xs font-bold uppercase" style={{ color: COLORS.textFaint }}>
-            Points (leave blank for default):
-          </label>
-          <input
-            type="number"
-            value={customPoints}
-            onChange={e => setCustomPoints(e.target.value)}
-            placeholder={state.behaviors.find(b => b.id === selectedBehavior)?.points}
-            style={{ ...inputStyle, marginTop: '0.5rem' }}
-          />
+      {students.length === 0 && (
+        <div style={{ textAlign: 'center', padding: 40, color: COLORS.textMuted }}>
+          No students in this class yet. Add students to see their avatars!
         </div>
       )}
 
-      <div>
-        <div className="flex items-center gap-2 mb-2">
-          <input
-            type="checkbox"
-            checked={selectAll}
-            onChange={toggleSelectAll}
-            id="select-all-bulk"
-          />
-          <label
-            htmlFor="select-all-bulk"
-            className="text-sm font-semibold cursor-pointer"
-            style={{ color: COLORS.text }}
-          >
-            Select All ({students.length})
-          </label>
-        </div>
-
-        <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-2">
-          {students.map(student => (
-            <label
-              key={student.id}
-              className="flex items-center gap-2 p-3 rounded-lg border cursor-pointer transition"
-              style={{
-                background: selected.has(student.id)
-                  ? `${COLORS.robotics}22`
-                  : COLORS.panel,
-                borderColor: selected.has(student.id)
-                  ? COLORS.robotics
-                  : COLORS.border,
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={selected.has(student.id)}
-                onChange={() => toggleStudent(student.id)}
-                className="cursor-pointer"
-              />
-              <span className="text-sm font-semibold" style={{ color: COLORS.text }}>
-                {student.name}
-              </span>
-            </label>
-          ))}
-        </div>
-      </div>
-
-      {selectedCount > 0 && (
-        <div
-          className="fixed bottom-6 left-6 right-6 md:left-auto md:right-6 md:w-80 rounded-2xl border p-4 shadow-2xl z-40"
-          style={{ background: COLORS.panel, borderColor: COLORS.border }}
-        >
-          <div className="text-xs font-bold mb-3" style={{ color: COLORS.textFaint }}>
-            Award {selectedCount} student{selectedCount !== 1 ? 's' : ''}?
-          </div>
-          <button
-            onClick={awardToGroup}
-            disabled={!selectedBehavior || selectedCount === 0}
-            className="w-full text-sm font-bold rounded-lg py-3 disabled:opacity-50"
-            style={{ background: COLORS.robotics, color: COLORS.onAccent }}
-          >
-            🎁 Award Group Points
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// 🔌 ==================== FEATURE 2: CLASSROOM CLOCK ====================
-function ClassroomClock({ COLORS }) {
-  const [time, setTime] = useState(new Date());
-
-  useEffect(() => {
-    const interval = setInterval(() => setTime(new Date()), 1000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const hours = String(time.getHours()).padStart(2, '0');
-  const mins = String(time.getMinutes()).padStart(2, '0');
-
-  return (
-    <div className="text-center p-4 rounded-xl" style={{ background: COLORS.panelAlt }}>
-      <div className="font-mono text-5xl font-black" style={{ color: COLORS.robotics }}>
-        {hours}:{mins}
-      </div>
-      <div className="text-xs mt-1" style={{ color: COLORS.textMuted }}>
-        {time.toLocaleDateString('en-US', {
-          weekday: 'long',
-          month: 'short',
-          day: 'numeric',
-        })}
-      </div>
-    </div>
-  );
-}
-
-// 🔌 ==================== FEATURE 2: CLASS END ALARM MODAL ====================
-function ClassEndAlarmModal({ periodName, onAcknowledge, COLORS }) {
-  useEffect(() => {
-    try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const playTone = (freq, duration) => {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.frequency.value = freq;
-        osc.type = 'sine';
-        gain.gain.setValueAtTime(0.1, ctx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + duration);
-        osc.start(ctx.currentTime);
-        osc.stop(ctx.currentTime + duration);
-      };
-      playTone(800, 0.3);
-      setTimeout(() => playTone(800, 0.3), 400);
-      setTimeout(() => playTone(800, 0.3), 800);
-    } catch (e) {
-      console.log('Audio not available');
-    }
-  }, []);
-
-  return (
-    <ModalShell title="⏰ Class Ending Soon" onClose={onAcknowledge}>
-      <div className="text-center space-y-4">
-        <div className="text-6xl">⏰</div>
-        <div className="text-2xl font-black" style={{ color: COLORS.challenge }}>
-          {periodName} ends in 5 minutes
-        </div>
-        <div
-          className="rounded-lg border p-4"
-          style={{ background: COLORS.panelSoft, borderColor: COLORS.border }}
-        >
-          <div className="text-sm" style={{ color: COLORS.textMuted }}>
-            Wrap up and prepare for transition.
-          </div>
-        </div>
-        <button
-          onClick={onAcknowledge}
-          className="w-full text-base font-bold rounded-lg py-3"
-          style={{ background: COLORS.robotics, color: COLORS.onAccent }}
-        >
-          ✓ Acknowledged
-        </button>
-      </div>
-    </ModalShell>
-  );
-}
-
-// 🔌 ==================== FEATURE 2: TIMETABLE MODULE ====================
-function TimetableModule({ state, persist, COLORS }) {
-  const [now, setNow] = useState(new Date());
-  const [showAlarm, setShowAlarm] = useState(null);
-  const alarmTriggeredRef = useRef(new Set());
-
-  useEffect(() => {
-    const interval = setInterval(() => setNow(new Date()), 10000);
-    return () => clearInterval(interval);
-  }, []);
-
-  useEffect(() => {
-    const nowTime = `${String(now.getHours()).padStart(2, '0')}:${String(
-      now.getMinutes()
-    ).padStart(2, '0')}`;
-
-    state.timetable.periods.forEach(period => {
-      const fiveMinBefore = subtractMinutes(period.endTime, 5);
-      const alarmKey = `${period.id}_${now.toDateString()}`;
-      if (
-        nowTime === fiveMinBefore &&
-        !alarmTriggeredRef.current.has(alarmKey)
-      ) {
-        alarmTriggeredRef.current.add(alarmKey);
-        setShowAlarm(period);
-      }
-    });
-  }, [now, state.timetable.periods]);
-
-  const handleAlarmAcknowledge = () => {
-    setShowAlarm(null);
-  };
-
-  const nowStr = `${String(now.getHours()).padStart(2, '0')}:${String(
-    now.getMinutes()
-  ).padStart(2, '0')}`;
-
-  let currentPeriod = null;
-  let nextPeriod = null;
-
-  for (let i = 0; i < state.timetable.periods.length; i++) {
-    const p = state.timetable.periods[i];
-    if (nowStr >= p.startTime && nowStr < p.endTime) {
-      currentPeriod = p;
-      nextPeriod = state.timetable.periods[i + 1] || null;
-      break;
-    }
-    if (nowStr < p.startTime) {
-      nextPeriod = p;
-      break;
-    }
-  }
-
-  return (
-    <div className="space-y-4">
-      <SectionLabel icon={CalendarDays} color={COLORS.robotics}>
-        Weekly Timetable
-      </SectionLabel>
-
-      <ClassroomClock COLORS={COLORS} />
-
-      {currentPeriod && (
-        <Card
-          style={{
-            borderColor: COLORS.robotics,
-            background: `${COLORS.robotics}08`,
-          }}
-        >
-          <div
-            className="text-xs font-bold uppercase mb-1"
-            style={{ color: COLORS.robotics }}
-          >
-            Currently Active
-          </div>
-          <div className="text-xl font-black" style={{ color: COLORS.text }}>
-            {currentPeriod.subject}
-          </div>
-          <div className="text-sm mt-1" style={{ color: COLORS.textMuted }}>
-            {currentPeriod.startTime} - {currentPeriod.endTime}
-          </div>
-        </Card>
-      )}
-
-      {nextPeriod && (
-        <Card style={{ borderColor: COLORS.border }}>
-          <div
-            className="text-xs font-bold uppercase mb-1"
-            style={{ color: COLORS.textFaint }}
-          >
-            Next Period
-          </div>
-          <div className="text-lg font-bold" style={{ color: COLORS.text }}>
-            {nextPeriod.subject}
-          </div>
-          <div className="text-sm mt-1" style={{ color: COLORS.textMuted }}>
-            {nextPeriod.startTime} - {nextPeriod.endTime}
-          </div>
-        </Card>
-      )}
-
-      <div
-        className="rounded-xl border overflow-hidden"
-        style={{ borderColor: COLORS.border }}
-      >
-        <div
-          className="grid grid-cols-3 gap-2 px-3 py-2.5 text-[9.5px] font-bold uppercase"
-          style={{ background: COLORS.panelAlt, color: COLORS.textFaint }}
-        >
-          <div>Time</div>
-          <div>Subject</div>
-          <div>Duration</div>
-        </div>
-        {state.timetable.periods.map(period => {
-          const isActive = nowStr >= period.startTime && nowStr < period.endTime;
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: 16 }}>
+        {students.map(student => {
+          const xp = computeStudentXP(state, student.id);
+          const rank = computeStudentRank(state, student.id);
           return (
-            <div
-              key={period.id}
-              className="grid grid-cols-3 gap-2 px-3 py-2.5 text-xs border-t items-center"
-              style={{
-                borderColor: COLORS.border,
-                background: isActive ? `${COLORS.robotics}0A` : 'transparent',
-              }}
+            <div key={student.id} style={{
+              background: COLORS.panel,
+              border: `1px solid ${COLORS.border}`,
+              borderRadius: 14,
+              padding: 12,
+              textAlign: 'center',
+              transition: 'box-shadow 0.2s',
+              cursor: 'pointer',
+            }}
+              onMouseEnter={e => e.currentTarget.style.boxShadow = `0 4px 16px ${COLORS.robotics}33`}
+              onMouseLeave={e => e.currentTarget.style.boxShadow = 'none'}
             >
-              <div className="font-mono font-bold">{period.startTime}</div>
-              <div className="font-semibold">{period.subject}</div>
-              <div style={{ color: COLORS.textMuted }}>45 min</div>
+              <StudentAvatar
+                student={student}
+                size="md"
+                clickable
+                onAward={handleAward}
+                showName={false}
+                state={state}
+                COLORS={COLORS}
+              />
+              <div style={{ fontWeight: 'bold', fontSize: 12, marginTop: 6, color: COLORS.text }}>{student.name}</div>
+              <div style={{ fontSize: 11, color: COLORS.xp, fontWeight: 'bold' }}>{xp} XP</div>
+              {rank && <div style={{ fontSize: 10, color: COLORS.textMuted }}>Rank #{rank}</div>}
             </div>
           );
         })}
       </div>
-
-      {showAlarm && (
-        <ClassEndAlarmModal
-          periodName={showAlarm.subject}
-          onAcknowledge={handleAlarmAcknowledge}
-          COLORS={COLORS}
-        />
-      )}
     </div>
   );
 }
 
-// 🔌 ==================== FEATURE 3: STUDENT REPORT GENERATOR ====================
-function StudentReportGenerator({ state, persist, COLORS }) {
-  const [selectedStudentId, setSelectedStudentId] = useState(null);
-  const [checkedAttitudes, setCheckedAttitudes] = useState(new Set());
-  const [generatedText, setGeneratedText] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const inputStyle = {
-    width: '100%',
-    fontSize: '14px',
-    padding: '8px 12px',
-    borderRadius: '8px',
-    border: `1px solid ${COLORS.border}`,
-    background: COLORS.panel,
-    color: COLORS.text,
+/* ---------- Avatar trait tables ---------- */
+const AVATAR_TOP_MALE = [
+  'ShortHairTheCaesar','ShortHairShortFlat','ShortHairShortRound',
+  'ShortHairShortWaved','ShortHairSides','ShortHairDreads01','NoHair',
+];
+const AVATAR_TOP_FEMALE = [
+  'LongHairBigHair','LongHairBob','LongHairBun','LongHairCurly',
+  'LongHairStraight','LongHairStraight2','LongHairMiaWallace','Hijab',
+];
+const AVATAR_CLOTHE = [
+  'BlazerAndShirt','BlazerAndSweater','CollarAndSweater',
+  'GraphicShirt','Hoodie','Overall','ShirtCrewNeck','ShirtVNeck',
+];
+const AVATAR_CLOTHE_COLOR = [
+  'Black','Blue01','Blue02','Blue03','Gray01','Gray02',
+  'PastelBlue','PastelGreen','PastelOrange','Pink','Red','White',
+];
+const AVATAR_EYE = ['Close','Default','Happy','Squint','Surprised','Wink','Hearts'];
+const AVATAR_MOUTH = ['Default','Smile','Smirk','Serious','Twinkle','Tongue'];
+const AVATAR_SKIN = ['Tanned','Yellow','Pale','Light','Brown','DarkBrown','Black'];
+const AVATAR_HAIR_COLOR = ['Auburn','Black','Blonde','BlondeGolden','Brown','BrownDark','PastelPink','Red'];
+const AVATAR_ACCESSORIES = ['Blank','Kurt','Prescription01','Round','Sunglasses','Wayfarers'];
+const AVATAR_FACIAL_HAIR_MALE = ['Blank','BeardLight','BeardMedium','MoustacheFancy','MoustacheMagnum'];
+
+function seededRand(seed, max) {
+  const x = Math.sin(seed + 1) * 10000;
+  return Math.floor((x - Math.floor(x)) * max);
+}
+
+function generateAvatar(studentId, gender = 'male') {
+  const s = studentId.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+  const pick = (arr, offset) => arr[seededRand(s + offset, arr.length)];
+  const topList = gender === 'female' ? AVATAR_TOP_FEMALE : AVATAR_TOP_MALE;
+  return {
+    gender,
+    topType: pick(topList, 1),
+    clotheType: pick(AVATAR_CLOTHE, 2),
+    clotheColor: pick(AVATAR_CLOTHE_COLOR, 3),
+    eyeType: pick(AVATAR_EYE, 4),
+    mouthType: pick(AVATAR_MOUTH, 5),
+    skinColor: pick(AVATAR_SKIN, 6),
+    hairColor: pick(AVATAR_HAIR_COLOR, 7),
+    accessoriesType: pick(AVATAR_ACCESSORIES, 8),
+    facialHairType: gender === 'male' ? pick(AVATAR_FACIAL_HAIR_MALE, 9) : 'Blank',
   };
+}
 
-  const POSITIVE_ATTITUDES = [
-    'Active Participation',
-    'Team Player',
-    'Problem Solver',
-    'Focused Effort',
-    'Creative Thinker',
-    'Respectful Listener',
-    'Takes Initiative',
-    'Helpful to Peers',
-  ];
+/* ---------- SVG Avatar renderer (no external lib needed) ---------- */
+const SKIN_HEX = {
+  Tanned:'#FD9841',Yellow:'#F8D25C',Pale:'#FDDBB4',Light:'#EDB98A',
+  Brown:'#D08B5B',DarkBrown:'#AE5D29',Black:'#614335',
+};
+const HAIR_HEX = {
+  Auburn:'#A55728',Black:'#2C1B18',Blonde:'#B58143',BlondeGolden:'#D6B370',
+  Brown:'#724133',BrownDark:'#4A312C',PastelPink:'#F59797',Red:'#C93305',
+};
+const CLOTHE_HEX = {
+  Black:'#262E33',Blue01:'#65C9FF',Blue02:'#5199E4',Blue03:'#25557C',
+  Gray01:'#E6E6E6',Gray02:'#929598',PastelBlue:'#B1E2FF',PastelGreen:'#A7FFC4',
+  PastelOrange:'#FFDEB5',Pink:'#FF488E',Red:'#FF5C5C',White:'#FFFFFF',
+};
 
-  const AREAS_FOR_IMPROVEMENT = [
-    'Distracted',
-    'Disrupting Peers',
-    'Unprepared',
-    'Late to Task',
-    'Needs Reminders',
-    'Off-Task',
-    'Rushed Work',
-    'Needs Support',
-  ];
-
-  const toggleAttitude = (attitude) => {
-    const next = new Set(checkedAttitudes);
-    if (next.has(attitude)) {
-      next.delete(attitude);
-    } else {
-      next.add(attitude);
-    }
-    setCheckedAttitudes(next);
-  };
-
-  const generateReport = async () => {
-    if (!selectedStudentId || checkedAttitudes.size === 0) {
-      alert('Select a student and at least one attitude');
-      return;
-    }
-
-    const student = state.students.find(s => s.id === selectedStudentId);
-    if (!student) return;
-
-    setLoading(true);
-
-    const positiveChecked = Array.from(checkedAttitudes).filter(a =>
-      POSITIVE_ATTITUDES.includes(a)
-    );
-    const improvementChecked = Array.from(checkedAttitudes).filter(a =>
-      AREAS_FOR_IMPROVEMENT.includes(a)
-    );
-
-    const prompt = `You are a teacher writing a brief, natural-sounding progress note about a student's behavior and attitude during class today.
-
-Student: ${student.name}
-Age Group: ${student.ageGroup}
-
-Positive behaviors observed: ${positiveChecked.join(', ') || 'None'}
-Areas for improvement: ${improvementChecked.join(', ') || 'None'}
-
-Write a single professional paragraph (2-3 sentences) summarizing this student's performance. Be encouraging but honest. Example: "John showed excellent focus as a Team Player today, though he was occasionally distracted during independent tasks."
-
-Respond ONLY with the paragraph, no extra text.`;
-
-    try {
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-6',
-          max_tokens: 200,
-          messages: [{ role: 'user', content: prompt }],
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`API error: ${response.status}`);
-      }
-
-      const data = await response.json();
-      const reportText =
-        data.content?.[0]?.type === 'text' ? data.content[0].text : '';
-      setGeneratedText(reportText);
-    } catch (error) {
-      alert(`Error: ${error.message}`);
-      console.error(error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const copyToClipboard = () => {
-    navigator.clipboard.writeText(generatedText).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  };
+function AvatarSVG({ av, size = 72 }) {
+  const skin = SKIN_HEX[av.skinColor] || '#EDB98A';
+  const hair = HAIR_HEX[av.hairColor] || '#2C1B18';
+  const cloth = CLOTHE_HEX[av.clotheColor] || '#5199E4';
+  const isFemale = av.gender === 'female';
+  const hasHijab = av.topType === 'Hijab';
 
   return (
-    <div className="space-y-5">
-      <SectionLabel icon={ClipboardList} color={COLORS.coding}>
-        Student Report Generator
-      </SectionLabel>
-
-      <Card>
-        <label className="text-xs font-bold uppercase mb-2" style={{ color: COLORS.textFaint }}>
-          Select Student
-        </label>
-        <select
-          value={selectedStudentId || ''}
-          onChange={e => {
-            setSelectedStudentId(e.target.value || null);
-            setGeneratedText('');
-            setCheckedAttitudes(new Set());
-          }}
-          style={{ ...inputStyle }}
-        >
-          <option value="">— Choose a student —</option>
-          {state.students.map(s => (
-            <option key={s.id} value={s.id}>
-              {s.name}
-            </option>
-          ))}
-        </select>
-      </Card>
-
-      {selectedStudentId && (
+    <svg width={size} height={size} viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+      {/* Body / shirt */}
+      <ellipse cx="32" cy="58" rx="18" ry="12" fill={cloth} />
+      {/* Neck */}
+      <rect x="28" y="40" width="8" height="8" rx="2" fill={skin} />
+      {/* Face */}
+      <ellipse cx="32" cy="32" rx="14" ry="15" fill={skin} />
+      {/* Hair top */}
+      {hasHijab ? (
+        <ellipse cx="32" cy="22" rx="15" ry="13" fill={hair} />
+      ) : isFemale ? (
         <>
-          <Card>
-            <SectionLabel
-              icon={Smile}
-              color={COLORS.success}
-              className="mb-3"
-            >
-              ✨ Positive Attitudes
-            </SectionLabel>
-            <div className="space-y-2">
-              {POSITIVE_ATTITUDES.map(attitude => (
-                <label
-                  key={attitude}
-                  className="flex items-center gap-2 p-2 rounded-lg cursor-pointer"
-                  style={{ background: COLORS.panelAlt }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={checkedAttitudes.has(attitude)}
-                    onChange={() => toggleAttitude(attitude)}
-                    className="cursor-pointer"
-                  />
-                  <span className="text-sm font-medium">{attitude}</span>
-                </label>
-              ))}
-            </div>
-          </Card>
-
-          <Card>
-            <SectionLabel
-              icon={AlertCircle}
-              color={COLORS.challenge}
-              className="mb-3"
-            >
-              📍 Areas for Improvement
-            </SectionLabel>
-            <div className="space-y-2">
-              {AREAS_FOR_IMPROVEMENT.map(area => (
-                <label
-                  key={area}
-                  className="flex items-center gap-2 p-2 rounded-lg cursor-pointer"
-                  style={{ background: COLORS.panelAlt }}
-                >
-                  <input
-                    type="checkbox"
-                    checked={checkedAttitudes.has(area)}
-                    onChange={() => toggleAttitude(area)}
-                    className="cursor-pointer"
-                  />
-                  <span className="text-sm font-medium">{area}</span>
-                </label>
-              ))}
-            </div>
-          </Card>
-
-          <button
-            onClick={generateReport}
-            disabled={loading || checkedAttitudes.size === 0}
-            className="w-full text-sm font-bold rounded-lg py-3 disabled:opacity-50"
-            style={{ background: COLORS.coding, color: COLORS.onAccent }}
-          >
-            {loading ? '⏳ Generating...' : '✨ Generate AI Report'}
-          </button>
-
-          {generatedText && (
-            <Card style={{ borderColor: `${COLORS.coding}55` }}>
-              <div
-                className="text-xs font-bold uppercase mb-2"
-                style={{ color: COLORS.coding }}
-              >
-                📄 Generated Report
-              </div>
-              <div
-                className="text-sm leading-relaxed mb-3 p-3 rounded-lg"
-                style={{ background: COLORS.panelAlt, color: COLORS.text }}
-              >
-                {generatedText}
-              </div>
-              <button
-                onClick={copyToClipboard}
-                className="text-xs font-bold rounded-lg px-3 py-2 w-full"
-                style={{
-                  background: copied ? COLORS.success : COLORS.panelSoft,
-                  color: copied ? COLORS.onAccent : COLORS.textMuted,
-                }}
-              >
-                {copied ? '✓ Copied!' : '📋 Copy to Clipboard'}
-              </button>
-            </Card>
-          )}
+          <ellipse cx="32" cy="19" rx="14" ry="10" fill={hair} />
+          <rect x="18" y="22" width="4" height="16" rx="2" fill={hair} />
+          <rect x="42" y="22" width="4" height="16" rx="2" fill={hair} />
         </>
+      ) : (
+        <ellipse cx="32" cy="20" rx="13" ry="8" fill={hair} />
+      )}
+      {/* Eyes */}
+      <circle cx="26" cy="31" r="2" fill="#1a1a1a" />
+      <circle cx="38" cy="31" r="2" fill="#1a1a1a" />
+      {/* Eye shine */}
+      <circle cx="27" cy="30" r="0.7" fill="white" />
+      <circle cx="39" cy="30" r="0.7" fill="white" />
+      {/* Smile */}
+      <path d="M27 37 Q32 41 37 37" stroke="#1a1a1a" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+      {/* Nose */}
+      <circle cx="32" cy="34" r="1" fill={skin} opacity="0.6" />
+      {/* Ears */}
+      <ellipse cx="18" cy="32" rx="2.5" ry="3" fill={skin} />
+      <ellipse cx="46" cy="32" rx="2.5" ry="3" fill={skin} />
+    </svg>
+  );
+}
+
+/* ---------- Clickable Student Avatar ---------- */
+function StudentAvatar({ student, size='md', clickable=true, onAward, showName=true, showRank=false, showXP=false, state, COLORS }) {
+  const av = state?.studentAvatars?.[student.id];
+  const [bouncing, setBouncing] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
+
+  const px = { sm:48, md:72, lg:96, xl:120 }[size] || 72;
+  const xp = state ? computeStudentXP(state, student.id) : 0;
+  const rank = state ? computeStudentRank(state, student.id) : null;
+
+  const handleClick = () => { if (clickable && onAward) setShowMenu(true); };
+
+  const handleAward = (b) => {
+    onAward(student.id, b.id, b.points);
+    setBouncing(true);
+    setShowMenu(false);
+    setTimeout(() => setBouncing(false), 500);
+    /* star burst */
+    for (let i = 0; i < 5; i++) {
+      const el = document.createElement('div');
+      el.textContent = '⭐';
+      el.style.cssText = `position:fixed;font-size:18px;pointer-events:none;z-index:9999;
+        top:${window.innerHeight/2}px;left:${window.innerWidth/2}px;
+        animation:particle-float 0.8s ease-out forwards;
+        --tx:${(Math.random()-0.5)*60}px`;
+      document.body.appendChild(el);
+      setTimeout(() => el.remove(), 800);
+    }
+  };
+
+  /* inject keyframe once */
+  if (typeof document !== 'undefined' && !document.getElementById('avatar-kf')) {
+    const s = document.createElement('style');
+    s.id = 'avatar-kf';
+    s.textContent = `
+      @keyframes av-bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
+      @keyframes particle-float{0%{opacity:1;transform:translateY(0) translateX(0)}100%{opacity:0;transform:translateY(-40px) translateX(var(--tx))}}
+      .av-bounce{animation:av-bounce 0.5s ease-in-out}
+    `;
+    document.head.appendChild(s);
+  }
+
+  const fallback = student.name?.[0]?.toUpperCase() || '?';
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',alignItems:'center',gap:4,position:'relative'}}>
+      <div
+        className={bouncing ? 'av-bounce' : ''}
+        onClick={handleClick}
+        style={{
+          width:px, height:px, cursor: clickable && onAward ? 'pointer' : 'default',
+          borderRadius:'50%', overflow:'hidden', background: COLORS?.panelAlt || '#EAF0FE',
+          border:`3px solid ${COLORS?.border || '#DCE4F7'}`,
+          display:'flex', alignItems:'center', justifyContent:'center',
+          transition:'transform 0.1s',
+          boxShadow: clickable && onAward ? '0 4px 12px rgba(42,79,214,0.2)' : 'none',
+        }}
+        title={clickable && onAward ? `Click to award ${student.name}` : student.name}
+      >
+        {av
+          ? <AvatarSVG av={av} size={px - 6} />
+          : <span style={{fontSize: px * 0.4, fontWeight:'bold', color: COLORS?.textMuted}}>{fallback}</span>
+        }
+      </div>
+
+      {showRank && rank && (
+        <div style={{
+          position:'absolute', top:-6, right:-6,
+          width:22, height:22, borderRadius:'50%',
+          background: rank===1 ? COLORS.xp : rank===2 ? '#C0C0C0' : '#CD7F32',
+          color:'white', fontSize:10, fontWeight:'bold',
+          display:'flex', alignItems:'center', justifyContent:'center',
+        }}>#{rank}</div>
+      )}
+
+      {showName && <div style={{fontSize:11,fontWeight:'bold',textAlign:'center',color: COLORS?.text}}>{student.name}</div>}
+      {showXP && <div style={{fontSize:10,color: COLORS?.xp, fontWeight:'bold'}}>{xp} XP</div>}
+
+      {showMenu && (
+        <div
+          style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center'}}
+          onClick={()=>setShowMenu(false)}
+        >
+          <div
+            style={{background:'white',borderRadius:16,padding:24,maxWidth:380,width:'90%',boxShadow:'0 20px 40px rgba(0,0,0,0.2)'}}
+            onClick={e=>e.stopPropagation()}
+          >
+            {/* Student avatar preview */}
+            <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:16}}>
+              <div style={{width:56,height:56,borderRadius:'50%',overflow:'hidden',border:`2px solid ${COLORS?.border}`}}>
+                {av ? <AvatarSVG av={av} size={52} /> : <span style={{fontSize:24}}>{fallback}</span>}
+              </div>
+              <div>
+                <div style={{fontWeight:'bold',fontSize:16}}>{student.name}</div>
+                <div style={{fontSize:12,color:COLORS?.textMuted}}>Choose a behavior to award</div>
+              </div>
+            </div>
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,maxHeight:280,overflowY:'auto',marginBottom:16}}>
+              {(state?.behaviors||[]).filter(b=>b.type==='positive').slice(0,10).map(b=>(
+                <button
+                  key={b.id}
+                  onClick={()=>handleAward(b)}
+                  style={{
+                    padding:10, border:`1px solid ${COLORS?.border}`,
+                    borderRadius:8, background:COLORS?.panelAlt,
+                    cursor:'pointer', fontSize:12, textAlign:'left',
+                    transition:'background 0.15s',
+                  }}
+                  onMouseEnter={e=>e.target.style.background=`${COLORS?.robotics}22`}
+                  onMouseLeave={e=>e.target.style.background=COLORS?.panelAlt}
+                >
+                  <div style={{fontWeight:'bold',marginBottom:2}}>{b.name}</div>
+                  <div style={{fontSize:11,color:COLORS?.xp}}>+{b.points} XP</div>
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={()=>setShowMenu(false)}
+              style={{width:'100%',padding:10,borderRadius:8,border:'none',background:COLORS?.robotics,color:'white',fontWeight:'bold',cursor:'pointer'}}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );
 }
 
-// 🔌 ==================== FEATURE 4: SEATING PLANS ====================
-function SeatingPlansModule({ state, persist, COLORS, onAward }) {
-  const [layout, setLayout] = useState(state.seatingPlans.layout || 'default');
-  const roster = state.students || [];
+/* ---------- Dashboard calculation helpers ---------- */
+function calcPointsOverTime(state, classId, days=30) {
+  const map = {};
+  for (let i=0;i<days;i++) {
+    const d = new Date(); d.setDate(d.getDate()-days+i+1);
+    map[d.toISOString().split('T')[0]] = 0;
+  }
+  const ids = new Set((classId ? state.students.filter(s=>s.classId===classId) : state.students).map(s=>s.id));
+  state.behaviorLog.forEach(l => {
+    const dk = (l.date||l.timestamp||'').split('T')[0];
+    if (ids.has(l.studentId) && map[dk]!==undefined) map[dk] += (l.points||0);
+  });
+  return Object.entries(map).map(([date,points])=>({date:date.slice(5),points}));
+}
 
-  const handleLayoutChange = (newLayout) => {
-    setLayout(newLayout);
-    let pairs = [];
-    let groups = [];
-    if (newLayout === 'pairs') {
-      pairs = generatePairs(roster);
-    } else if (newLayout === 'groups') {
-      groups = generateGroups(roster);
-    }
-    persist(prev => ({
-      ...prev,
-      seatingPlans: { layout: newLayout, pairs, groups },
-    }));
-  };
+function calcTopStudents(state, classId, n=3) {
+  const students = classId ? state.students.filter(s=>s.classId===classId) : state.students;
+  return students
+    .map(s=>({student:s, xp:computeStudentXP(state,s.id)}))
+    .sort((a,b)=>b.xp-a.xp).slice(0,n);
+}
 
-  const awardGroupPoints = (studentIds) => {
-    if (!onAward || !studentIds.length) return;
-    const behavior = state.behaviors.find(b => b.name === 'Team Player');
-    if (!behavior) return;
-    onAward({
-      studentIds,
-      behaviorIds: [behavior.id],
-      pointsOverride: 5,
-      comment: 'Group work bonus',
-    });
-  };
+function calcTopClasses(state, n=3) {
+  return (state.classes||[])
+    .map(c=>{
+      const ss=state.students.filter(s=>s.classId===c.id);
+      const totalXP=ss.reduce((sum,s)=>sum+computeStudentXP(state,s.id),0);
+      return {cls:c, totalXP, count:ss.length, avgXP:ss.length?Math.round(totalXP/ss.length):0,
+        topStudents:ss.map(s=>({student:s,xp:computeStudentXP(state,s.id)})).sort((a,b)=>b.xp-a.xp).slice(0,3)};
+    })
+    .sort((a,b)=>b.totalXP-a.totalXP).slice(0,n);
+}
+
+/* ---------- Teacher Analytics Dashboard ---------- */
+function TeacherAnalyticsDashboard({ state, classId, COLORS }) {
+  const [chart, setChart] = useState('points');
+  const topStudents = calcTopStudents(state, classId, 3);
+  const topClasses = calcTopClasses(state, 3);
+  const pointsData = calcPointsOverTime(state, classId, 30);
+  const roster = classId ? state.students.filter(s=>s.classId===classId) : state.students;
+  const totalXP = roster.reduce((s,st)=>s+computeStudentXP(state,st.id),0);
+  const avgXP = roster.length ? Math.round(totalXP/roster.length) : 0;
+
+  const medal = ['🥇','🥈','🥉'];
+  const medalColor = [COLORS.xp,'#C0C0C0','#CD7F32'];
 
   return (
-    <div className="space-y-5">
-      <SectionLabel icon={Users} color={COLORS.behavior}>
-        Seating & Group Work
-      </SectionLabel>
+    <div style={{paddingBottom:60}}>
+      {/* Header */}
+      <div style={{marginBottom:24}}>
+        <h1 style={{fontSize:22,fontWeight:'bold',color:COLORS.text,margin:'0 0 4px'}}>📊 Analytics Dashboard</h1>
+        <p style={{margin:0,fontSize:12,color:COLORS.textMuted}}>{classId?`Showing class data`:'All classes combined'}</p>
+      </div>
 
-      <div className="flex gap-2 flex-wrap">
+      {/* Quick Stats */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(110px,1fr))',gap:12,marginBottom:24}}>
         {[
-          { id: 'default', label: '📊 Default', emoji: '📊' },
-          { id: 'pairs', label: '👥 Pairs', emoji: '👥' },
-          { id: 'groups', label: '🪑 Groups', emoji: '🪑' },
-        ].map(opt => (
-          <button
-            key={opt.id}
-            onClick={() => handleLayoutChange(opt.id)}
-            className="text-xs font-bold px-3 py-2 rounded-lg transition border"
-            style={{
-              background:
-                layout === opt.id ? COLORS.robotics : COLORS.panel,
-              borderColor: layout === opt.id ? COLORS.robotics : COLORS.border,
-              color:
-                layout === opt.id ? COLORS.onAccent : COLORS.text,
-            }}
-          >
-            {opt.emoji} {opt.label}
-          </button>
+          {label:'Total XP',value:totalXP,color:COLORS.xp},
+          {label:'Avg/Student',value:avgXP,color:COLORS.robotics},
+          {label:'Students',value:roster.length,color:COLORS.behavior},
+          {label:'Classes',value:(state.classes||[]).length,color:COLORS.reward},
+        ].map(s=>(
+          <div key={s.label} style={{background:COLORS.panel,border:`1px solid ${COLORS.border}`,borderRadius:10,padding:12}}>
+            <div style={{fontSize:10,color:COLORS.textMuted,fontWeight:'bold',marginBottom:4}}>{s.label}</div>
+            <div style={{fontSize:22,fontWeight:'bold',color:s.color}}>{s.value}</div>
+          </div>
         ))}
       </div>
 
-      {layout === 'pairs' && (
-        <div className="space-y-3">
-          <div className="text-xs font-bold" style={{ color: COLORS.textFaint }}>
-            👥 PAIRS LAYOUT
+      {/* Top Students + Top Classes side by side */}
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:24}}>
+        {/* Top Students */}
+        <div style={{background:COLORS.panel,border:`1px solid ${COLORS.border}`,borderRadius:12,padding:16}}>
+          <div style={{fontWeight:'bold',fontSize:14,marginBottom:12,display:'flex',alignItems:'center',gap:6}}>
+            🏆 Top Students
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            {(state.seatingPlans.pairs || generatePairs(roster)).map(pair => (
-              <div
-                key={pair.id}
-                className="rounded-xl border p-3"
-                style={{
-                  borderColor: COLORS.border,
-                  background: COLORS.panelAlt,
-                }}
-              >
-                <div className="flex flex-col gap-2 mb-2">
-                  {pair.studentIds.map(sId => {
-                    const s = state.students.find(st => st.id === sId);
-                    return s ? (
-                      <div
-                        key={sId}
-                        className="text-sm font-semibold flex items-center gap-2"
-                      >
-                        <Avatar name={s.name} id={s.id} size={24} />
-                        {s.name}
-                      </div>
-                    ) : null;
-                  })}
+          {topStudents.length===0 && <div style={{color:COLORS.textMuted,fontSize:12}}>No students yet</div>}
+          {topStudents.map(({student,xp},i)=>(
+            <div key={student.id} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 0',borderBottom:i<2?`1px solid ${COLORS.border}`:'none'}}>
+              <span style={{fontSize:20}}>{medal[i]}</span>
+              <StudentAvatar student={student} size="sm" showName={false} clickable={false} state={state} COLORS={COLORS} />
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:12,fontWeight:'bold',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{student.name}</div>
+                <div style={{fontSize:11,color:COLORS.textMuted}}>{xp} XP</div>
+              </div>
+              <div style={{width:18,height:18,borderRadius:'50%',background:medalColor[i],display:'flex',alignItems:'center',justifyContent:'center',fontSize:9,color:'white',fontWeight:'bold'}}>
+                #{i+1}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Top Classes */}
+        <div style={{background:COLORS.panel,border:`1px solid ${COLORS.border}`,borderRadius:12,padding:16}}>
+          <div style={{fontWeight:'bold',fontSize:14,marginBottom:12,display:'flex',alignItems:'center',gap:6}}>
+            🏆 Top Classes
+          </div>
+          {topClasses.length===0 && <div style={{color:COLORS.textMuted,fontSize:12}}>No classes yet</div>}
+          {topClasses.map(({cls,totalXP,count,avgXP:avg},i)=>(
+            <div key={cls.id} style={{padding:'8px 0',borderBottom:i<2?`1px solid ${COLORS.border}`:'none'}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
+                <div style={{fontWeight:'bold',fontSize:13,display:'flex',alignItems:'center',gap:6}}>
+                  <span>{medal[i]}</span>{cls.name}
                 </div>
-                <button
-                  onClick={() => awardGroupPoints(pair.studentIds)}
-                  className="w-full text-xs font-bold rounded-lg px-2 py-1.5"
-                  style={{ background: COLORS.reward, color: COLORS.onAccent }}
-                >
-                  +5 XP Pair Bonus
-                </button>
+                <span style={{fontSize:11,fontWeight:'bold',color:COLORS.xp}}>{totalXP} XP</span>
+              </div>
+              <div style={{width:'100%',height:6,background:COLORS.border,borderRadius:3}}>
+                <div style={{height:'100%',borderRadius:3,background:medalColor[i],width:`${Math.min(100,totalXP/50)}%`,maxWidth:'100%'}} />
+              </div>
+              <div style={{fontSize:10,color:COLORS.textMuted,marginTop:4}}>{count} students • avg {avg} XP</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Trend Charts */}
+      <div style={{background:COLORS.panel,border:`1px solid ${COLORS.border}`,borderRadius:12,padding:16}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
+          <div style={{fontWeight:'bold',fontSize:14}}>📈 Trends (Last 30 Days)</div>
+          <div style={{display:'flex',gap:6}}>
+            {[{id:'points',label:'Points'},{id:'classes',label:'Classes'}].map(o=>(
+              <button key={o.id} onClick={()=>setChart(o.id)}
+                style={{fontSize:11,padding:'4px 10px',borderRadius:6,border:'none',cursor:'pointer',fontWeight:'bold',
+                  background:chart===o.id?COLORS.robotics:COLORS.panelAlt,
+                  color:chart===o.id?COLORS.onAccent:COLORS.text}}
+              >{o.label}</button>
+            ))}
+          </div>
+        </div>
+
+        {chart==='points' && (
+          <ResponsiveContainer width="100%" height={220}>
+            <LineChart data={pointsData}>
+              <CartesianGrid strokeDasharray="3 3" stroke={COLORS.border} />
+              <XAxis dataKey="date" stroke={COLORS.textMuted} style={{fontSize:10}} tick={{fontSize:10}} />
+              <YAxis stroke={COLORS.textMuted} style={{fontSize:10}} tick={{fontSize:10}} />
+              <Tooltip contentStyle={{background:COLORS.panel,border:`1px solid ${COLORS.border}`,fontSize:12}} />
+              <Line type="monotone" dataKey="points" stroke={COLORS.robotics} strokeWidth={2} dot={false} />
+            </LineChart>
+          </ResponsiveContainer>
+        )}
+
+        {chart==='classes' && (
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={topClasses.map(({cls,totalXP})=>({name:cls.name,XP:totalXP}))}>
+              <CartesianGrid strokeDasharray="3 3" stroke={COLORS.border} />
+              <XAxis dataKey="name" stroke={COLORS.textMuted} tick={{fontSize:10}} />
+              <YAxis stroke={COLORS.textMuted} tick={{fontSize:10}} />
+              <Tooltip contentStyle={{background:COLORS.panel,border:`1px solid ${COLORS.border}`,fontSize:12}} />
+              <Bar dataKey="XP" fill={COLORS.robotics} radius={[4,4,0,0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Public Homepage ---------- */
+function PublicHomepage({ state, onGoToAuth, COLORS }) {
+  const topClasses = calcTopClasses(state, 3);
+  const topStudents = (state.students||[])
+    .map(s=>({student:s,xp:computeStudentXP(state,s.id)}))
+    .sort((a,b)=>b.xp-a.xp).slice(0,5);
+
+  const medal=['🥇','🥈','🥉'];
+
+  return (
+    <div style={{background:COLORS.bg,minHeight:'100vh',fontFamily:'inherit'}}>
+      {/* Nav */}
+      <nav style={{background:'white',borderBottom:`1px solid ${COLORS.border}`,padding:'12px 24px',display:'flex',justifyContent:'space-between',alignItems:'center',position:'sticky',top:0,zIndex:100}}>
+        <div style={{fontSize:22,fontWeight:'bold',color:COLORS.robotics}}>⭐ نجم</div>
+        <button
+          onClick={onGoToAuth}
+          style={{padding:'8px 20px',borderRadius:8,border:'none',background:COLORS.robotics,color:'white',fontWeight:'bold',cursor:'pointer',fontSize:13}}
+        >Sign In</button>
+      </nav>
+
+      {/* Hero */}
+      <section style={{padding:'80px 24px 60px',textAlign:'center',background:`linear-gradient(135deg, ${COLORS.robotics}11 0%, ${COLORS.bg} 60%)`}}>
+        <div style={{maxWidth:640,margin:'0 auto'}}>
+          <div style={{fontSize:48,marginBottom:16}}>⭐🏆🎯</div>
+          <h1 style={{fontSize:36,fontWeight:'bold',color:COLORS.text,margin:'0 0 16px',lineHeight:1.2}}>
+            Make Classroom Rewards <span style={{color:COLORS.robotics}}>Fun</span>
+          </h1>
+          <p style={{fontSize:16,color:COLORS.textMuted,margin:'0 0 32px',lineHeight:1.6}}>
+            Click student avatars to award points, track progress, and celebrate every achievement. Every student is a star! ✨
+          </p>
+          <button
+            onClick={onGoToAuth}
+            style={{fontSize:16,fontWeight:'bold',padding:'14px 36px',borderRadius:12,border:'none',background:COLORS.robotics,color:'white',cursor:'pointer',boxShadow:`0 8px 24px ${COLORS.robotics}44`}}
+          >Get Started Free →</button>
+
+          {/* Stats row */}
+          <div style={{display:'flex',justifyContent:'center',gap:40,marginTop:48,flexWrap:'wrap'}}>
+            {[{n:'Click',label:'Avatars to award'},{n:'Track',label:'Progress in real-time'},{n:'Celebrate',label:'Every achievement'}].map(s=>(
+              <div key={s.n} style={{textAlign:'center'}}>
+                <div style={{fontSize:20,fontWeight:'bold',color:COLORS.robotics}}>{s.n}</div>
+                <div style={{fontSize:12,color:COLORS.textMuted}}>{s.label}</div>
               </div>
             ))}
           </div>
         </div>
-      )}
+      </section>
 
-      {layout === 'groups' && (
-        <div className="space-y-3">
-          <div className="text-xs font-bold" style={{ color: COLORS.textFaint }}>
-            🪑 GROUP LAYOUT
-          </div>
-          {(state.seatingPlans.groups || generateGroups(roster)).map(group => (
-            <Card key={group.id} style={{ borderColor: COLORS.border }}>
-              <div className="flex items-center justify-between mb-3">
-                <div className="text-sm font-bold" style={{ color: COLORS.text }}>
-                  Table {group.tableNumber}
+      {/* Top Classes */}
+      {topClasses.length > 0 && (
+        <section style={{padding:'60px 24px',background:'white'}}>
+          <div style={{maxWidth:1000,margin:'0 auto'}}>
+            <h2 style={{fontSize:26,fontWeight:'bold',textAlign:'center',color:COLORS.text,margin:'0 0 8px'}}>🏆 Top Classes This Month</h2>
+            <p style={{textAlign:'center',color:COLORS.textMuted,margin:'0 0 40px',fontSize:14}}>Leading the way in points and participation</p>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(260px,1fr))',gap:20}}>
+              {topClasses.map(({cls,totalXP,count,topStudents:ts},i)=>(
+                <div key={cls.id} style={{
+                  border:`2px solid ${i===0?COLORS.xp:i===1?'#C0C0C0':'#CD7F32'}`,
+                  borderRadius:16,padding:20,background:COLORS.panel,
+                  boxShadow:`0 4px 16px ${i===0?COLORS.xp+'22':'transparent'}`,
+                }}>
+                  <div style={{fontSize:32,marginBottom:8}}>{medal[i]}</div>
+                  <h3 style={{fontSize:18,fontWeight:'bold',margin:'0 0 4px',color:COLORS.text}}>{cls.name}</h3>
+                  <div style={{fontSize:12,color:COLORS.textMuted,marginBottom:12}}>{count} students • {totalXP} total XP</div>
+                  {/* Progress bar */}
+                  <div style={{width:'100%',height:8,background:COLORS.border,borderRadius:4,marginBottom:16}}>
+                    <div style={{height:'100%',borderRadius:4,background:i===0?COLORS.xp:i===1?'#C0C0C0':'#CD7F32',width:`${Math.min(100,(totalXP/2000)*100)}%`}} />
+                  </div>
+                  {/* Top students in class */}
+                  <div style={{fontSize:11,color:COLORS.textFaint,fontWeight:'bold',marginBottom:8}}>TOP STUDENTS</div>
+                  <div style={{display:'flex',gap:8}}>
+                    {ts.map(({student})=>(
+                      <div key={student.id} style={{textAlign:'center'}}>
+                        <div style={{width:40,height:40,borderRadius:'50%',overflow:'hidden',border:`2px solid ${COLORS.border}`,background:COLORS.panelAlt}}>
+                          {state.studentAvatars[student.id]
+                            ? <AvatarSVG av={state.studentAvatars[student.id]} size={38} />
+                            : <span style={{fontSize:18,lineHeight:'38px'}}>{student.name[0]}</span>}
+                        </div>
+                        <div style={{fontSize:9,marginTop:2,color:COLORS.textMuted}}>{student.name.split(' ')[0]}</div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <span
-                  className="text-xs font-bold px-2 py-1 rounded-full"
-                  style={{
-                    background: `${COLORS.robotics}22`,
-                    color: COLORS.robotics,
-                  }}
-                >
-                  {group.studentIds.length} students
-                </span>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 mb-3">
-                {group.studentIds.map(sId => {
-                  const s = state.students.find(st => st.id === sId);
-                  return s ? (
-                    <div
-                      key={sId}
-                      className="flex items-center gap-2 p-2 rounded-lg"
-                      style={{ background: COLORS.panelSoft }}
-                    >
-                      <Avatar name={s.name} id={s.id} size={20} />
-                      <div className="text-xs font-semibold">{s.name}</div>
-                    </div>
-                  ) : null;
-                })}
-              </div>
-
-              <button
-                onClick={() => awardGroupPoints(group.studentIds)}
-                className="w-full text-xs font-bold rounded-lg px-2 py-2"
-                style={{ background: COLORS.robotics, color: COLORS.onAccent }}
-              >
-                🎁 Table +10 XP
-              </button>
-            </Card>
-          ))}
-        </div>
+              ))}
+            </div>
+          </div>
+        </section>
       )}
+
+      {/* Top Students */}
+      {topStudents.length > 0 && (
+        <section style={{padding:'60px 24px'}}>
+          <div style={{maxWidth:1000,margin:'0 auto'}}>
+            <h2 style={{fontSize:26,fontWeight:'bold',textAlign:'center',color:COLORS.text,margin:'0 0 8px'}}>⭐ Star Students</h2>
+            <p style={{textAlign:'center',color:COLORS.textMuted,margin:'0 0 40px',fontSize:14}}>Highest ranked students across all classes</p>
+            <div style={{display:'flex',gap:16,justifyContent:'center',flexWrap:'wrap'}}>
+              {topStudents.map(({student,xp},i)=>(
+                <div key={student.id} style={{
+                  textAlign:'center',padding:20,background:'white',
+                  borderRadius:16,border:`1px solid ${COLORS.border}`,
+                  minWidth:120,boxShadow:i===0?`0 8px 24px ${COLORS.xp}33`:'none',
+                  transform:i===0?'scale(1.05)':'scale(1)',
+                }}>
+                  {i<3 && <div style={{fontSize:20,marginBottom:4}}>{medal[i]}</div>}
+                  <div style={{width:72,height:72,borderRadius:'50%',overflow:'hidden',border:`3px solid ${i===0?COLORS.xp:COLORS.border}`,margin:'0 auto 8px',background:COLORS.panelAlt}}>
+                    {state.studentAvatars[student.id]
+                      ? <AvatarSVG av={state.studentAvatars[student.id]} size={68} />
+                      : <span style={{fontSize:32,lineHeight:'68px'}}>{student.name[0]}</span>}
+                  </div>
+                  <div style={{fontWeight:'bold',fontSize:13,marginBottom:4}}>{student.name}</div>
+                  <div style={{fontSize:11,color:COLORS.textMuted,marginBottom:6}}>
+                    {(state.classes||[]).find(c=>c.id===student.classId)?.name||''}
+                  </div>
+                  <div style={{fontSize:14,fontWeight:'bold',color:COLORS.xp}}>{xp} XP</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* CTA */}
+      <section style={{padding:'60px 24px',background:`linear-gradient(135deg,${COLORS.robotics},${COLORS.robotics}CC)`,textAlign:'center'}}>
+        <h2 style={{fontSize:26,fontWeight:'bold',color:'white',margin:'0 0 12px'}}>Ready to start?</h2>
+        <p style={{color:'rgba(255,255,255,0.8)',margin:'0 0 24px',fontSize:14}}>Join thousands of teachers making classrooms more fun</p>
+        <button
+          onClick={onGoToAuth}
+          style={{padding:'14px 36px',borderRadius:12,border:'2px solid white',background:'transparent',color:'white',fontWeight:'bold',fontSize:16,cursor:'pointer'}}
+        >Create Free Account →</button>
+      </section>
+
+      {/* Footer */}
+      <footer style={{background:COLORS.text,padding:'24px',textAlign:'center'}}>
+        <div style={{fontSize:18,fontWeight:'bold',color:'white',marginBottom:4}}>⭐ نجم — Najm</div>
+        <div style={{fontSize:12,color:'rgba(255,255,255,0.5)'}}>Every student is a star</div>
+      </footer>
     </div>
   );
 }
@@ -2524,7 +2265,14 @@ export default function App() {
     return (
       <>
         <Toast toast={toast} />
-        <LandingPage state={state} onPickStudent={() => setRole('student')} onPickTeacher={() => handleRoleClick('teacher')} />
+        <PublicHomepage
+          state={state}
+          COLORS={COLORS}
+          onGoToAuth={() => {
+            if (session) { setRole('teacher'); }
+            else { setShowLogin(true); }
+          }}
+        />
         {showLogin && (
           <TeacherAuthModal onClose={() => setShowLogin(false)} onSuccess={() => { setShowLogin(false); setRole('teacher'); }} />
         )}
@@ -3134,6 +2882,8 @@ function TeacherApp({ state, persist, classId, email, setToast, db, session, man
   const tabs = [
     { id: 'overview', label: 'Overview', icon: LayoutGrid },
     { id: 'classes', label: 'My Classes', icon: Building2 },
+    { id: 'analytics-new', label: '📊 Dashboard', icon: BarChart3 },
+    { id: 'avatars', label: '🎭 Avatars', icon: Users },
     { id: 'bulk-award', label: '📦 Bulk Award', icon: Gift },
     { id: 'timetable', label: '📅 Timetable', icon: CalendarDays },
     { id: 'reports', label: '📝 Reports', icon: ClipboardList },
@@ -3170,58 +2920,14 @@ function TeacherApp({ state, persist, classId, email, setToast, db, session, man
         <div className="md:hidden"><NavTabs tabs={tabs} active={tab} onChange={setTab} accent={COLORS.robotics} /></div>
         {tab === 'overview' && <OverviewTab state={scoped} persist={persist} classId={classId} db={db} session={session} />}
         {tab === 'classes' && <TeacherClassesTab state={state} classes={manageableClasses || []} activeClassId={classId} db={db} onSwitch={onSwitchClass} />}
-        {tab === 'bulk-award' && (
-          <BulkAwardMode
-            state={scoped}
-            students={scoped.students}
-            onAward={(data) => {
-              // Award to multiple students
-              const newBehaviorLog = [...scoped.behaviorLog];
-              data.studentIds.forEach(studentId => {
-                data.behaviorIds.forEach(behaviorId => {
-                  newBehaviorLog.push({
-                    id: String(Date.now()) + Math.random(),
-                    studentId,
-                    behaviorId,
-                    points: data.pointsOverride,
-                    timestamp: new Date().toISOString(),
-                    comment: data.comment,
-                  });
-                });
-              });
-              persist(prev => ({ ...prev, behaviorLog: newBehaviorLog }));
-              setToast({ message: `✅ Awarded ${data.studentIds.length} students!`, color: COLORS.success });
-            }}
-            onCancel={() => setTab('overview')}
-            COLORS={COLORS}
-          />
+        {tab === 'analytics-new' && <TeacherAnalyticsDashboard state={scoped} classId={classId} COLORS={COLORS} />}
+        {tab === 'avatars' && (
+          <AvatarClassroomTab state={scoped} persist={persist} classId={classId} COLORS={COLORS} onAward={awardBehavior} />
         )}
+        {tab === 'bulk-award' && <BulkAwardMode state={scoped} students={scoped.students} onAward={awardBehavior} onCancel={() => setTab('overview')} COLORS={COLORS} />}
         {tab === 'timetable' && <TimetableModule state={scoped} persist={persist} COLORS={COLORS} />}
         {tab === 'reports' && <StudentReportGenerator state={scoped} persist={persist} COLORS={COLORS} />}
-        {tab === 'seating' && (
-          <SeatingPlansModule
-            state={scoped}
-            persist={persist}
-            COLORS={COLORS}
-            onAward={(data) => {
-              const newBehaviorLog = [...scoped.behaviorLog];
-              data.studentIds.forEach(studentId => {
-                data.behaviorIds.forEach(behaviorId => {
-                  newBehaviorLog.push({
-                    id: String(Date.now()) + Math.random(),
-                    studentId,
-                    behaviorId,
-                    points: data.pointsOverride,
-                    timestamp: new Date().toISOString(),
-                    comment: data.comment,
-                  });
-                });
-              });
-              persist(prev => ({ ...prev, behaviorLog: newBehaviorLog }));
-              setToast({ message: `✅ Group bonus awarded!`, color: COLORS.success });
-            }}
-          />
-        )}
+        {tab === 'seating' && <SeatingPlansModule state={scoped} persist={persist} COLORS={COLORS} onAward={awardBehavior} />}
         {tab === 'assessments' && <AssessmentsTab state={scoped} persist={persist} classId={classId} email={email} setToast={setToast} db={db} session={session} />}
         {tab === 'challenges' && <ChallengesTab state={state} persist={persist} classId={classId} scopedStudents={scoped.students} isAdmin={!classId} db={db} session={session} />}
         {tab === 'missions' && <MissionsTab state={scoped} persist={persist} classId={classId} db={db} session={session} />}
