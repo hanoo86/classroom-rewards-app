@@ -9,7 +9,7 @@ import {
   CalendarDays, UserPlus, Building2, Percent, ListChecks, Trash2, Shuffle, KeyRound, ChevronDown, Volume2
 } from 'lucide-react';
 import { supabase } from './supabaseClient';
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { LineChart, Line, BarChart, Bar as RechartsBar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
 /* ---------------------------------- palette --------------------------------- */
 
@@ -1937,7 +1937,7 @@ function TeacherAnalyticsDashboard({ state, classId, COLORS }) {
               <XAxis dataKey="name" stroke={COLORS.textMuted} tick={{fontSize:10}} />
               <YAxis stroke={COLORS.textMuted} tick={{fontSize:10}} />
               <Tooltip contentStyle={{background:COLORS.panel,border:`1px solid ${COLORS.border}`,fontSize:12}} />
-              <Bar dataKey="XP" fill={COLORS.robotics} radius={[4,4,0,0]} />
+              <RechartsBar dataKey="XP" fill={COLORS.robotics} radius={[4,4,0,0]} />
             </BarChart>
           </ResponsiveContainer>
         )}
