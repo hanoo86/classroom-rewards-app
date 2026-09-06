@@ -1522,32 +1522,136 @@ function AvatarSVG({ av, size = 72 }) {
   const skin = SKIN_HEX[av.skinColor] || '#EDB98A';
   const hair = HAIR_HEX[av.hairColor] || '#2C1B18';
   const cloth = CLOTHE_HEX[av.clotheColor] || '#5199E4';
+  const clothDark = cloth + 'CC';
   const isFemale = av.gender === 'female';
   const hasHijab = av.topType === 'Hijab';
+  const skinShadow = skin + 'AA';
+  const eyeStyle = av.eyeType || 'Default';
+  const mouthStyle = av.mouthType || 'Smile';
+
   return (
-    <svg width={size} height={size} viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
-      <ellipse cx="32" cy="58" rx="18" ry="12" fill={cloth} />
-      <rect x="28" y="40" width="8" height="8" rx="2" fill={skin} />
-      <ellipse cx="32" cy="32" rx="14" ry="15" fill={skin} />
+    <svg width={size} height={size} viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <radialGradient id={`sg${av.skinColor}`} cx="40%" cy="35%" r="60%">
+          <stop offset="0%" stopColor={skin} stopOpacity="1"/>
+          <stop offset="100%" stopColor={skinShadow} stopOpacity="1"/>
+        </radialGradient>
+        <radialGradient id={`bg${av.clotheColor}`} cx="50%" cy="30%" r="70%">
+          <stop offset="0%" stopColor={cloth} stopOpacity="1"/>
+          <stop offset="100%" stopColor={clothDark} stopOpacity="1"/>
+        </radialGradient>
+      </defs>
+
+      {/* Body / shirt with gradient */}
+      <ellipse cx="50" cy="95" rx="30" ry="18" fill={`url(#bg${av.clotheColor})`} />
+      {/* Collar detail */}
+      <path d="M42 72 Q50 78 58 72 L56 68 Q50 74 44 68 Z" fill={clothDark} opacity="0.6"/>
+
+      {/* Neck */}
+      <rect x="44" y="62" width="12" height="12" rx="4" fill={skin}/>
+      {/* Neck shadow */}
+      <rect x="44" y="68" width="12" height="6" rx="2" fill={skinShadow} opacity="0.3"/>
+
+      {/* Head base with gradient */}
+      <ellipse cx="50" cy="45" rx="22" ry="24" fill={`url(#sg${av.skinColor})`}/>
+      {/* Cheek blush */}
+      <ellipse cx="30" cy="50" rx="6" ry="4" fill="#FF9999" opacity="0.25"/>
+      <ellipse cx="70" cy="50" rx="6" ry="4" fill="#FF9999" opacity="0.25"/>
+
+      {/* Ears */}
+      <ellipse cx="28" cy="46" rx="5" ry="6" fill={skin}/>
+      <ellipse cx="72" cy="46" rx="5" ry="6" fill={skin}/>
+      <ellipse cx="28" cy="46" rx="3" ry="4" fill={skinShadow} opacity="0.3"/>
+      <ellipse cx="72" cy="46" rx="3" ry="4" fill={skinShadow} opacity="0.3"/>
+
+      {/* Hair */}
       {hasHijab ? (
-        <ellipse cx="32" cy="22" rx="15" ry="13" fill={hair} />
+        <>
+          <ellipse cx="50" cy="30" rx="24" ry="20" fill={hair}/>
+          <ellipse cx="50" cy="44" rx="26" ry="10" fill={hair}/>
+          <rect x="24" y="38" width="6" height="20" rx="3" fill={hair}/>
+          <rect x="70" y="38" width="6" height="20" rx="3" fill={hair}/>
+        </>
       ) : isFemale ? (
         <>
-          <ellipse cx="32" cy="19" rx="14" ry="10" fill={hair} />
-          <rect x="18" y="22" width="4" height="16" rx="2" fill={hair} />
-          <rect x="42" y="22" width="4" height="16" rx="2" fill={hair} />
+          {/* Long hair back */}
+          <ellipse cx="50" cy="25" rx="23" ry="16" fill={hair}/>
+          <rect x="24" y="30" width="7" height="30" rx="4" fill={hair}/>
+          <rect x="69" y="30" width="7" height="30" rx="4" fill={hair}/>
+          {/* Hair shine */}
+          <ellipse cx="42" cy="22" rx="6" ry="3" fill="white" opacity="0.15" transform="rotate(-20,42,22)"/>
         </>
       ) : (
-        <ellipse cx="32" cy="20" rx="13" ry="8" fill={hair} />
+        <>
+          {/* Short hair */}
+          <ellipse cx="50" cy="26" rx="22" ry="14" fill={hair}/>
+          <rect x="28" y="26" width="6" height="10" rx="3" fill={hair}/>
+          <rect x="66" y="26" width="6" height="10" rx="3" fill={hair}/>
+          {/* Hair shine */}
+          <ellipse cx="43" cy="23" rx="7" ry="3" fill="white" opacity="0.15" transform="rotate(-15,43,23)"/>
+        </>
       )}
-      <circle cx="26" cy="31" r="2" fill="#1a1a1a" />
-      <circle cx="38" cy="31" r="2" fill="#1a1a1a" />
-      <circle cx="27" cy="30" r="0.7" fill="white" />
-      <circle cx="39" cy="30" r="0.7" fill="white" />
-      <path d="M27 37 Q32 41 37 37" stroke="#1a1a1a" strokeWidth="1.5" fill="none" strokeLinecap="round" />
-      <circle cx="32" cy="34" r="1" fill={skin} opacity="0.6" />
-      <ellipse cx="18" cy="32" rx="2.5" ry="3" fill={skin} />
-      <ellipse cx="46" cy="32" rx="2.5" ry="3" fill={skin} />
+
+      {/* Eyes — big Pixar-style */}
+      {eyeStyle === 'Happy' || eyeStyle === 'Wink' ? (
+        <>
+          <path d="M36 44 Q40 40 44 44" stroke="#1a1a1a" strokeWidth="2.5" fill="none" strokeLinecap="round"/>
+          {eyeStyle === 'Wink'
+            ? <ellipse cx="62" cy="43" rx="5" ry="6" fill="#1a1a1a"/>
+            : <path d="M56 44 Q60 40 64 44" stroke="#1a1a1a" strokeWidth="2.5" fill="none" strokeLinecap="round"/>}
+        </>
+      ) : eyeStyle === 'Surprised' ? (
+        <>
+          <circle cx="40" cy="43" r="7" fill="white" stroke="#1a1a1a" strokeWidth="1"/>
+          <circle cx="40" cy="43" r="4" fill="#1a1a1a"/>
+          <circle cx="42" cy="41" r="1.5" fill="white"/>
+          <circle cx="60" cy="43" r="7" fill="white" stroke="#1a1a1a" strokeWidth="1"/>
+          <circle cx="60" cy="43" r="4" fill="#1a1a1a"/>
+          <circle cx="62" cy="41" r="1.5" fill="white"/>
+        </>
+      ) : (
+        <>
+          {/* Normal big eyes */}
+          <ellipse cx="40" cy="43" rx="7" ry="8" fill="white" stroke="#1a1a1a" strokeWidth="1"/>
+          <ellipse cx="40" cy="44" rx="5" ry="6" fill="#3D2B1A"/>
+          <ellipse cx="40" cy="44" rx="3" ry="4" fill="#1a1a1a"/>
+          <circle cx="42" cy="42" r="2" fill="white"/>
+          <circle cx="38" cy="45" r="1" fill="white" opacity="0.5"/>
+
+          <ellipse cx="60" cy="43" rx="7" ry="8" fill="white" stroke="#1a1a1a" strokeWidth="1"/>
+          <ellipse cx="60" cy="44" rx="5" ry="6" fill="#3D2B1A"/>
+          <ellipse cx="60" cy="44" rx="3" ry="4" fill="#1a1a1a"/>
+          <circle cx="62" cy="42" r="2" fill="white"/>
+          <circle cx="58" cy="45" r="1" fill="white" opacity="0.5"/>
+        </>
+      )}
+
+      {/* Eyebrows */}
+      <path d="M33 36 Q40 33 47 36" stroke={hair} strokeWidth="2" fill="none" strokeLinecap="round"/>
+      <path d="M53 36 Q60 33 67 36" stroke={hair} strokeWidth="2" fill="none" strokeLinecap="round"/>
+
+      {/* Nose */}
+      <path d="M48 50 Q50 54 52 50" stroke={skinShadow} strokeWidth="1.5" fill="none" strokeLinecap="round" opacity="0.6"/>
+
+      {/* Mouth */}
+      {mouthStyle === 'Smile' || mouthStyle === 'Twinkle' ? (
+        <>
+          <path d="M40 58 Q50 65 60 58" stroke="#C0392B" strokeWidth="2" fill="none" strokeLinecap="round"/>
+          <path d="M42 58 Q50 64 58 58 Q50 62 42 58 Z" fill="#E74C3C" opacity="0.5"/>
+          {mouthStyle === 'Twinkle' && <ellipse cx="50" cy="59" rx="5" ry="2" fill="white" opacity="0.6"/>}
+        </>
+      ) : mouthStyle === 'Smirk' ? (
+        <path d="M42 58 Q52 63 60 57" stroke="#C0392B" strokeWidth="2" fill="none" strokeLinecap="round"/>
+      ) : mouthStyle === 'Serious' ? (
+        <path d="M42 59 Q50 60 58 59" stroke="#C0392B" strokeWidth="2" fill="none" strokeLinecap="round"/>
+      ) : mouthStyle === 'Tongue' ? (
+        <>
+          <path d="M40 58 Q50 65 60 58" stroke="#C0392B" strokeWidth="2" fill="none" strokeLinecap="round"/>
+          <ellipse cx="50" cy="62" rx="5" ry="4" fill="#E74C3C"/>
+        </>
+      ) : (
+        <path d="M42 59 Q50 64 58 59" stroke="#C0392B" strokeWidth="2" fill="none" strokeLinecap="round"/>
+      )}
     </svg>
   );
 }
@@ -1809,27 +1913,181 @@ function TeacherAnalyticsDashboard({ state, classId, COLORS }) {
 }
 
 /* ---------- Public Homepage ---------- */
+function FloatingParticles() {
+  const particles = ['⭐','🏆','🎯','✨','🌟','🎉','💫','🏅'];
+  return (
+    <div style={{position:'absolute',inset:0,overflow:'hidden',pointerEvents:'none'}}>
+      {particles.map((p,i)=>(
+        <div key={i} style={{
+          position:'absolute',
+          left:`${10+i*11}%`,
+          top:`${20+((i*37)%60)}%`,
+          fontSize:16+((i*7)%14),
+          opacity:0.15+((i*0.07)%0.25),
+          animation:`float-${i%3} ${3+i%4}s ease-in-out infinite`,
+          animationDelay:`${i*0.4}s`,
+        }}>{p}</div>
+      ))}
+    </div>
+  );
+}
+
+function HeroIllustration({ state, COLORS }) {
+  const sampleStudents = (state.students||[]).slice(0,3);
+  return (
+    <div style={{position:'relative',width:'100%',maxWidth:420,margin:'0 auto'}}>
+      {/* Dashboard mockup card */}
+      <div style={{background:'white',borderRadius:20,padding:20,boxShadow:'0 20px 60px rgba(42,79,214,0.15)',border:`1px solid ${COLORS.border}`,position:'relative',zIndex:2}}>
+        {/* Fake top bar */}
+        <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:16}}>
+          <div style={{width:10,height:10,borderRadius:'50%',background:'#FF5F57'}}/>
+          <div style={{width:10,height:10,borderRadius:'50%',background:'#FFBD2E'}}/>
+          <div style={{width:10,height:10,borderRadius:'50%',background:'#28CA41'}}/>
+          <div style={{flex:1,height:8,background:COLORS.panelAlt,borderRadius:4,marginLeft:8}}/>
+        </div>
+        {/* Avatar row */}
+        <div style={{display:'flex',gap:12,marginBottom:16,justifyContent:'center'}}>
+          {sampleStudents.length > 0 ? sampleStudents.map((s,i)=>(
+            <div key={s.id} style={{textAlign:'center'}}>
+              <div style={{width:56,height:56,borderRadius:'50%',overflow:'hidden',border:`3px solid ${[COLORS.xp,COLORS.robotics,COLORS.behavior][i]}`,background:COLORS.panelAlt,margin:'0 auto 4px'}}>
+                {state.studentAvatars[s.id]
+                  ? <AvatarSVG av={state.studentAvatars[s.id]} size={52}/>
+                  : <span style={{fontSize:24,lineHeight:'52px',display:'block'}}>{s.name[0]}</span>}
+              </div>
+              <div style={{fontSize:10,fontWeight:'bold',color:COLORS.text}}>{s.name.split(' ')[0]}</div>
+              <div style={{fontSize:9,color:COLORS.xp,fontWeight:'bold'}}>{totalXP(state,s.id)} XP</div>
+            </div>
+          )) : [
+            {name:'Ahmed',color:COLORS.xp,xp:340,icon:'👦'},
+            {name:'Sara',color:COLORS.robotics,xp:285,icon:'👧'},
+            {name:'Omar',color:COLORS.behavior,xp:210,icon:'👦'},
+          ].map((s,i)=>(
+            <div key={i} style={{textAlign:'center'}}>
+              <div style={{width:56,height:56,borderRadius:'50%',background:`${s.color}22`,border:`3px solid ${s.color}`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:28,margin:'0 auto 4px'}}>{s.icon}</div>
+              <div style={{fontSize:10,fontWeight:'bold',color:COLORS.text}}>{s.name}</div>
+              <div style={{fontSize:9,color:COLORS.xp,fontWeight:'bold'}}>{s.xp} XP</div>
+            </div>
+          ))}
+        </div>
+        {/* Fake chart bars */}
+        <div style={{display:'flex',alignItems:'flex-end',gap:4,height:50,padding:'0 4px'}}>
+          {[40,65,45,80,55,90,70,85,60,95].map((h,i)=>(
+            <div key={i} style={{flex:1,height:`${h}%`,background:`linear-gradient(180deg,${COLORS.robotics},${COLORS.robotics}88)`,borderRadius:'3px 3px 0 0',opacity:0.7+i*0.03}}/>
+          ))}
+        </div>
+        {/* Points badge */}
+        <div style={{position:'absolute',top:-12,right:-12,background:COLORS.xp,color:'white',borderRadius:12,padding:'6px 12px',fontSize:12,fontWeight:'bold',boxShadow:'0 4px 12px rgba(0,0,0,0.2)'}}>
+          +15 XP ⭐
+        </div>
+      </div>
+      {/* Floating badges */}
+      <div style={{position:'absolute',top:'-5%',left:'-8%',background:'white',borderRadius:12,padding:'8px 14px',boxShadow:'0 8px 24px rgba(0,0,0,0.12)',fontSize:20,zIndex:3,animation:'float-0 3s ease-in-out infinite'}}>🏆</div>
+      <div style={{position:'absolute',bottom:'10%',left:'-10%',background:'white',borderRadius:12,padding:'8px 14px',boxShadow:'0 8px 24px rgba(0,0,0,0.12)',fontSize:20,zIndex:3,animation:'float-1 4s ease-in-out infinite',animationDelay:'1s'}}>🎯</div>
+      <div style={{position:'absolute',bottom:'-5%',right:'-8%',background:'white',borderRadius:12,padding:'8px 14px',boxShadow:'0 8px 24px rgba(0,0,0,0.12)',fontSize:20,zIndex:3,animation:'float-2 3.5s ease-in-out infinite',animationDelay:'0.5s'}}>🏅</div>
+    </div>
+  );
+}
+
 function PublicHomepage({ state, onGoToAuth, COLORS }) {
   const topClasses = calcTopClasses(state, 3);
   const topStudents = (state.students||[]).map(s=>({student:s,xp:totalXP(state,s.id)})).sort((a,b)=>b.xp-a.xp).slice(0,5);
   const medal=['🥇','🥈','🥉'];
+  const features = [
+    { icon:'🎭', title:'Cartoon Avatars', desc:'Every student gets a unique avatar. Click it to award points instantly.' },
+    { icon:'📊', title:'Live Dashboard', desc:'See top students, class rankings, and trends updated in real time.' },
+    { icon:'🏆', title:'Class Competitions', desc:'Monthly competitions motivate whole classes to improve together.' },
+    { icon:'🎁', title:'Reward Store', desc:'Students spend their XP on real classroom rewards you customize.' },
+  ];
+
+  // Inject animation keyframes once
+  if (typeof document !== 'undefined' && !document.getElementById('hp-kf')) {
+    const s = document.createElement('style');
+    s.id = 'hp-kf';
+    s.textContent = `
+      @keyframes float-0{0%,100%{transform:translateY(0px)}50%{transform:translateY(-10px)}}
+      @keyframes float-1{0%,100%{transform:translateY(0px)}50%{transform:translateY(-14px)}}
+      @keyframes float-2{0%,100%{transform:translateY(0px)}50%{transform:translateY(-8px)}}
+      @keyframes slide-up{from{opacity:0;transform:translateY(30px)}to{opacity:1;transform:translateY(0)}}
+      @keyframes pulse-glow{0%,100%{box-shadow:0 0 0 0 rgba(42,79,214,0.3)}50%{box-shadow:0 0 0 12px rgba(42,79,214,0)}}
+      .hp-fade{animation:slide-up 0.6s ease-out forwards}
+    `;
+    document.head.appendChild(s);
+  }
 
   return (
     <div style={{background:COLORS.bg,minHeight:'100vh',fontFamily:'inherit'}}>
-      <nav style={{background:'white',borderBottom:`1px solid ${COLORS.border}`,padding:'12px 24px',display:'flex',justifyContent:'space-between',alignItems:'center',position:'sticky',top:0,zIndex:100}}>
-        <div style={{fontSize:22,fontWeight:'bold',color:COLORS.robotics}}>⭐ نجم</div>
-        <div style={{display:'flex',gap:12}}>
-          <button onClick={onGoToAuth} style={{padding:'8px 20px',borderRadius:8,border:`2px solid ${COLORS.robotics}`,background:'transparent',color:COLORS.robotics,fontWeight:'bold',cursor:'pointer',fontSize:13}}>Sign In</button>
-          <button onClick={onGoToAuth} style={{padding:'8px 20px',borderRadius:8,border:'none',background:COLORS.robotics,color:'white',fontWeight:'bold',cursor:'pointer',fontSize:13}}>Get Started</button>
+      {/* Sticky Nav */}
+      <nav style={{background:'rgba(255,255,255,0.95)',backdropFilter:'blur(12px)',borderBottom:`1px solid ${COLORS.border}`,padding:'14px 32px',display:'flex',justifyContent:'space-between',alignItems:'center',position:'sticky',top:0,zIndex:100}}>
+        <div style={{display:'flex',alignItems:'center',gap:10}}>
+          <div style={{width:36,height:36,borderRadius:10,background:`linear-gradient(135deg,${COLORS.robotics},${COLORS.coding})`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:20}}>⭐</div>
+          <div>
+            <div style={{fontSize:18,fontWeight:'bold',color:COLORS.text,lineHeight:1}}>نجم</div>
+            <div style={{fontSize:9,color:COLORS.textFaint,letterSpacing:2,textTransform:'uppercase'}}>Najm</div>
+          </div>
+        </div>
+        <div style={{display:'flex',gap:12,alignItems:'center'}}>
+          <button onClick={onGoToAuth} style={{padding:'8px 20px',borderRadius:8,border:`2px solid ${COLORS.robotics}`,background:'transparent',color:COLORS.robotics,fontWeight:'bold',cursor:'pointer',fontSize:13,transition:'all 0.2s'}}>Sign In</button>
+          <button onClick={onGoToAuth} style={{padding:'10px 24px',borderRadius:10,border:'none',background:`linear-gradient(135deg,${COLORS.robotics},${COLORS.coding})`,color:'white',fontWeight:'bold',cursor:'pointer',fontSize:13,boxShadow:`0 4px 14px ${COLORS.robotics}44`,animation:'pulse-glow 2s infinite'}}>Get Started Free</button>
         </div>
       </nav>
 
-      <section style={{padding:'80px 24px 60px',textAlign:'center',background:`linear-gradient(135deg,${COLORS.robotics}11 0%,${COLORS.bg} 60%)`}}>
-        <div style={{maxWidth:640,margin:'0 auto'}}>
-          <div style={{fontSize:56,marginBottom:16}}>⭐</div>
-          <h1 style={{fontSize:38,fontWeight:'bold',color:COLORS.text,margin:'0 0 16px',lineHeight:1.2}}>Make Classroom Rewards <span style={{color:COLORS.robotics}}>Fun</span></h1>
-          <p style={{fontSize:16,color:COLORS.textMuted,margin:'0 0 32px',lineHeight:1.6}}>Click student avatars to award points instantly, track progress, and celebrate every achievement. Every student is a star! ✨</p>
-          <button onClick={onGoToAuth} style={{fontSize:16,fontWeight:'bold',padding:'14px 36px',borderRadius:12,border:'none',background:COLORS.robotics,color:'white',cursor:'pointer',boxShadow:`0 8px 24px ${COLORS.robotics}44`}}>Get Started Free →</button>
+      {/* Hero Section — split layout */}
+      <section style={{padding:'80px 32px 80px',background:`linear-gradient(135deg,${COLORS.sidebarBg} 0%,#0D1545 100%)`,position:'relative',overflow:'hidden'}}>
+        <FloatingParticles/>
+        <div style={{maxWidth:1100,margin:'0 auto',display:'grid',gridTemplateColumns:'1fr 1fr',gap:60,alignItems:'center',position:'relative',zIndex:1}}>
+          {/* Left: Text */}
+          <div className="hp-fade">
+            <div style={{display:'inline-flex',alignItems:'center',gap:8,background:'rgba(240,172,46,0.15)',border:'1px solid rgba(240,172,46,0.3)',borderRadius:20,padding:'6px 14px',marginBottom:24}}>
+              <span style={{fontSize:14}}>⭐</span>
+              <span style={{fontSize:12,fontWeight:'bold',color:'#F0AC2E',letterSpacing:1}}>EVERY STUDENT IS A STAR</span>
+            </div>
+            <h1 style={{fontSize:42,fontWeight:'bold',color:'white',margin:'0 0 20px',lineHeight:1.15}}>
+              Make Classroom<br/>
+              Rewards <span style={{color:'#F0AC2E',textShadow:'0 0 30px rgba(240,172,46,0.5)'}}>Fun & Fair</span>
+            </h1>
+            <p style={{fontSize:17,color:'rgba(255,255,255,0.7)',margin:'0 0 36px',lineHeight:1.7}}>
+              Click student avatars to award points instantly. Track progress in real time. Watch every student shine! ✨
+            </p>
+            <div style={{display:'flex',gap:16,flexWrap:'wrap'}}>
+              <button onClick={onGoToAuth} style={{fontSize:16,fontWeight:'bold',padding:'14px 32px',borderRadius:12,border:'none',background:'#F0AC2E',color:'#121A3D',cursor:'pointer',boxShadow:'0 8px 24px rgba(240,172,46,0.4)'}}>
+                Get Started Free →
+              </button>
+              <button onClick={onGoToAuth} style={{fontSize:14,fontWeight:'bold',padding:'14px 24px',borderRadius:12,border:'2px solid rgba(255,255,255,0.3)',background:'transparent',color:'white',cursor:'pointer'}}>
+                Sign In
+              </button>
+            </div>
+            <div style={{display:'flex',gap:32,marginTop:40}}>
+              {[{n:'Click',d:'Avatars to award'},{n:'Track',d:'Real-time progress'},{n:'Celebrate',d:'Every achievement'}].map(s=>(
+                <div key={s.n}>
+                  <div style={{fontSize:18,fontWeight:'bold',color:'#F0AC2E'}}>{s.n}</div>
+                  <div style={{fontSize:11,color:'rgba(255,255,255,0.5)'}}>{s.d}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+          {/* Right: Illustration */}
+          <div style={{display:'flex',justifyContent:'center'}}>
+            <HeroIllustration state={state} COLORS={COLORS}/>
+          </div>
+        </div>
+      </section>
+
+      {/* Features strip */}
+      <section style={{padding:'60px 32px',background:'white'}}>
+        <div style={{maxWidth:1100,margin:'0 auto'}}>
+          <h2 style={{fontSize:28,fontWeight:'bold',textAlign:'center',color:COLORS.text,margin:'0 0 8px'}}>Everything you need in one place</h2>
+          <p style={{textAlign:'center',color:COLORS.textMuted,margin:'0 0 48px',fontSize:15}}>Designed for real classrooms, built by teachers for teachers</p>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))',gap:24}}>
+            {features.map((f,i)=>(
+              <div key={i} style={{padding:24,borderRadius:16,border:`1px solid ${COLORS.border}`,background:COLORS.panelAlt,textAlign:'center',transition:'transform 0.2s,box-shadow 0.2s'}}
+                onMouseEnter={e=>{e.currentTarget.style.transform='translateY(-4px)';e.currentTarget.style.boxShadow=`0 12px 32px ${COLORS.robotics}22`}}
+                onMouseLeave={e=>{e.currentTarget.style.transform='none';e.currentTarget.style.boxShadow='none'}}>
+                <div style={{fontSize:40,marginBottom:12}}>{f.icon}</div>
+                <div style={{fontSize:15,fontWeight:'bold',color:COLORS.text,marginBottom:8}}>{f.title}</div>
+                <div style={{fontSize:13,color:COLORS.textMuted,lineHeight:1.5}}>{f.desc}</div>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
@@ -2697,6 +2955,8 @@ function TeacherApp({ state, persist, classId, email, setToast, db, session, man
     { id: 'classes', label: 'My Classes', icon: Building2 },
     { id: 'analytics-new', label: '📊 Dashboard', icon: BarChart3 },
     { id: 'avatars', label: '🎭 Avatars', icon: Users },
+    { id: 'reports', label: '📝 Reports', icon: ClipboardList },
+    { id: 'seating', label: '🪑 Seating', icon: Users },
     { id: 'assessments', label: 'Assessments', icon: ClipboardList },
     { id: 'challenges', label: 'Challenges', icon: ListChecks },
     { id: 'missions', label: 'Missions', icon: Target },
@@ -2731,6 +2991,8 @@ function TeacherApp({ state, persist, classId, email, setToast, db, session, man
         {tab === 'classes' && <TeacherClassesTab state={state} classes={manageableClasses || []} activeClassId={classId} db={db} onSwitch={onSwitchClass} />}
         {tab === 'analytics-new' && <TeacherAnalyticsDashboard state={scoped} classId={classId} COLORS={COLORS} />}
         {tab === 'avatars' && <AvatarClassroomTab state={scoped} persist={persist} classId={classId} COLORS={COLORS} onAward={awardBehavior} />}
+        {tab === 'reports' && <StudentReportGenerator state={scoped} persist={persist} COLORS={COLORS} />}
+        {tab === 'seating' && <SeatingPlansModule state={scoped} persist={persist} COLORS={COLORS} onAward={awardBehavior} />}
         {tab === 'assessments' && <AssessmentsTab state={scoped} persist={persist} classId={classId} email={email} setToast={setToast} db={db} session={session} />}
         {tab === 'challenges' && <ChallengesTab state={state} persist={persist} classId={classId} scopedStudents={scoped.students} isAdmin={!classId} db={db} session={session} />}
         {tab === 'missions' && <MissionsTab state={scoped} persist={persist} classId={classId} db={db} session={session} />}
