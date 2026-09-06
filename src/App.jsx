@@ -1479,103 +1479,18 @@ function ClassPickerScreen({ state, classes, onPick }) {
 }
 
 /* ============================================================
-   REDESIGN COMPONENTS — Avatars, Dashboard, Homepage
+   REDESIGN — Avatars, Analytics Dashboard, Public Homepage
    ============================================================ */
 
-function AvatarClassroomTab({ state, persist, classId, COLORS, onAward }) {
-  const students = classId ? state.students.filter(s => s.classId === classId) : state.students;
-
-  // Auto-generate missing avatars
-  React.useEffect(() => {
-    const missing = students.filter(s => !state.studentAvatars[s.id]);
-    if (missing.length === 0) return;
-    const newAvatars = { ...state.studentAvatars };
-    missing.forEach(s => {
-      const gender = state.classGenderConfig?.[s.classId] === 'girls' ? 'female'
-        : state.classGenderConfig?.[s.classId] === 'boys' ? 'male'
-        : Math.random() > 0.5 ? 'male' : 'female';
-      newAvatars[s.id] = generateAvatar(s.id, gender);
-    });
-    persist(prev => ({ ...prev, studentAvatars: newAvatars }));
-  }, [students.length]);
-
-  const handleAward = (studentId, behaviorId, points) => {
-    onAward({ studentIds: [studentId], behaviorIds: [behaviorId], pointsOverride: points, comment: '' });
-  };
-
-  return (
-    <div>
-      <div style={{ marginBottom: 20 }}>
-        <h2 style={{ fontSize: 20, fontWeight: 'bold', color: COLORS.text, margin: '0 0 4px' }}>🎭 Student Avatars</h2>
-        <p style={{ margin: 0, fontSize: 12, color: COLORS.textMuted }}>Click any avatar to award points instantly</p>
-      </div>
-
-      {students.length === 0 && (
-        <div style={{ textAlign: 'center', padding: 40, color: COLORS.textMuted }}>
-          No students in this class yet. Add students to see their avatars!
-        </div>
-      )}
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: 16 }}>
-        {students.map(student => {
-          const xp = computeStudentXP(state, student.id);
-          const rank = computeStudentRank(state, student.id);
-          return (
-            <div key={student.id} style={{
-              background: COLORS.panel,
-              border: `1px solid ${COLORS.border}`,
-              borderRadius: 14,
-              padding: 12,
-              textAlign: 'center',
-              transition: 'box-shadow 0.2s',
-              cursor: 'pointer',
-            }}
-              onMouseEnter={e => e.currentTarget.style.boxShadow = `0 4px 16px ${COLORS.robotics}33`}
-              onMouseLeave={e => e.currentTarget.style.boxShadow = 'none'}
-            >
-              <StudentAvatar
-                student={student}
-                size="md"
-                clickable
-                onAward={handleAward}
-                showName={false}
-                state={state}
-                COLORS={COLORS}
-              />
-              <div style={{ fontWeight: 'bold', fontSize: 12, marginTop: 6, color: COLORS.text }}>{student.name}</div>
-              <div style={{ fontSize: 11, color: COLORS.xp, fontWeight: 'bold' }}>{xp} XP</div>
-              {rank && <div style={{ fontSize: 10, color: COLORS.textMuted }}>Rank #{rank}</div>}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 /* ---------- Avatar trait tables ---------- */
-const AVATAR_TOP_MALE = [
-  'ShortHairTheCaesar','ShortHairShortFlat','ShortHairShortRound',
-  'ShortHairShortWaved','ShortHairSides','ShortHairDreads01','NoHair',
-];
-const AVATAR_TOP_FEMALE = [
-  'LongHairBigHair','LongHairBob','LongHairBun','LongHairCurly',
-  'LongHairStraight','LongHairStraight2','LongHairMiaWallace','Hijab',
-];
-const AVATAR_CLOTHE = [
-  'BlazerAndShirt','BlazerAndSweater','CollarAndSweater',
-  'GraphicShirt','Hoodie','Overall','ShirtCrewNeck','ShirtVNeck',
-];
-const AVATAR_CLOTHE_COLOR = [
-  'Black','Blue01','Blue02','Blue03','Gray01','Gray02',
-  'PastelBlue','PastelGreen','PastelOrange','Pink','Red','White',
-];
+const AVATAR_TOP_MALE = ['ShortHairTheCaesar','ShortHairShortFlat','ShortHairShortRound','ShortHairShortWaved','ShortHairSides','NoHair'];
+const AVATAR_TOP_FEMALE = ['LongHairBigHair','LongHairBob','LongHairBun','LongHairCurly','LongHairStraight','LongHairStraight2','Hijab'];
+const AVATAR_CLOTHE = ['BlazerAndShirt','BlazerAndSweater','CollarAndSweater','GraphicShirt','Hoodie','Overall','ShirtCrewNeck','ShirtVNeck'];
+const AVATAR_CLOTHE_COLOR = ['Black','Blue01','Blue02','Blue03','Gray01','Gray02','PastelBlue','PastelGreen','PastelOrange','Pink','Red','White'];
 const AVATAR_EYE = ['Close','Default','Happy','Squint','Surprised','Wink','Hearts'];
 const AVATAR_MOUTH = ['Default','Smile','Smirk','Serious','Twinkle','Tongue'];
 const AVATAR_SKIN = ['Tanned','Yellow','Pale','Light','Brown','DarkBrown','Black'];
 const AVATAR_HAIR_COLOR = ['Auburn','Black','Blonde','BlondeGolden','Brown','BrownDark','PastelPink','Red'];
-const AVATAR_ACCESSORIES = ['Blank','Kurt','Prescription01','Round','Sunglasses','Wayfarers'];
-const AVATAR_FACIAL_HAIR_MALE = ['Blank','BeardLight','BeardMedium','MoustacheFancy','MoustacheMagnum'];
 
 function seededRand(seed, max) {
   const x = Math.sin(seed + 1) * 10000;
@@ -1595,25 +1510,13 @@ function generateAvatar(studentId, gender = 'male') {
     mouthType: pick(AVATAR_MOUTH, 5),
     skinColor: pick(AVATAR_SKIN, 6),
     hairColor: pick(AVATAR_HAIR_COLOR, 7),
-    accessoriesType: pick(AVATAR_ACCESSORIES, 8),
-    facialHairType: gender === 'male' ? pick(AVATAR_FACIAL_HAIR_MALE, 9) : 'Blank',
   };
 }
 
-/* ---------- SVG Avatar renderer (no external lib needed) ---------- */
-const SKIN_HEX = {
-  Tanned:'#FD9841',Yellow:'#F8D25C',Pale:'#FDDBB4',Light:'#EDB98A',
-  Brown:'#D08B5B',DarkBrown:'#AE5D29',Black:'#614335',
-};
-const HAIR_HEX = {
-  Auburn:'#A55728',Black:'#2C1B18',Blonde:'#B58143',BlondeGolden:'#D6B370',
-  Brown:'#724133',BrownDark:'#4A312C',PastelPink:'#F59797',Red:'#C93305',
-};
-const CLOTHE_HEX = {
-  Black:'#262E33',Blue01:'#65C9FF',Blue02:'#5199E4',Blue03:'#25557C',
-  Gray01:'#E6E6E6',Gray02:'#929598',PastelBlue:'#B1E2FF',PastelGreen:'#A7FFC4',
-  PastelOrange:'#FFDEB5',Pink:'#FF488E',Red:'#FF5C5C',White:'#FFFFFF',
-};
+/* ---------- SVG Avatar renderer ---------- */
+const SKIN_HEX = { Tanned:'#FD9841',Yellow:'#F8D25C',Pale:'#FDDBB4',Light:'#EDB98A',Brown:'#D08B5B',DarkBrown:'#AE5D29',Black:'#614335' };
+const HAIR_HEX = { Auburn:'#A55728',Black:'#2C1B18',Blonde:'#B58143',BlondeGolden:'#D6B370',Brown:'#724133',BrownDark:'#4A312C',PastelPink:'#F59797',Red:'#C93305' };
+const CLOTHE_HEX = { Black:'#262E33',Blue01:'#65C9FF',Blue02:'#5199E4',Blue03:'#25557C',Gray01:'#E6E6E6',Gray02:'#929598',PastelBlue:'#B1E2FF',PastelGreen:'#A7FFC4',PastelOrange:'#FFDEB5',Pink:'#FF488E',Red:'#FF5C5C',White:'#FFFFFF' };
 
 function AvatarSVG({ av, size = 72 }) {
   const skin = SKIN_HEX[av.skinColor] || '#EDB98A';
@@ -1621,16 +1524,11 @@ function AvatarSVG({ av, size = 72 }) {
   const cloth = CLOTHE_HEX[av.clotheColor] || '#5199E4';
   const isFemale = av.gender === 'female';
   const hasHijab = av.topType === 'Hijab';
-
   return (
     <svg width={size} height={size} viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
-      {/* Body / shirt */}
       <ellipse cx="32" cy="58" rx="18" ry="12" fill={cloth} />
-      {/* Neck */}
       <rect x="28" y="40" width="8" height="8" rx="2" fill={skin} />
-      {/* Face */}
       <ellipse cx="32" cy="32" rx="14" ry="15" fill={skin} />
-      {/* Hair top */}
       {hasHijab ? (
         <ellipse cx="32" cy="22" rx="15" ry="13" fill={hair} />
       ) : isFemale ? (
@@ -1642,17 +1540,12 @@ function AvatarSVG({ av, size = 72 }) {
       ) : (
         <ellipse cx="32" cy="20" rx="13" ry="8" fill={hair} />
       )}
-      {/* Eyes */}
       <circle cx="26" cy="31" r="2" fill="#1a1a1a" />
       <circle cx="38" cy="31" r="2" fill="#1a1a1a" />
-      {/* Eye shine */}
       <circle cx="27" cy="30" r="0.7" fill="white" />
       <circle cx="39" cy="30" r="0.7" fill="white" />
-      {/* Smile */}
       <path d="M27 37 Q32 41 37 37" stroke="#1a1a1a" strokeWidth="1.5" fill="none" strokeLinecap="round" />
-      {/* Nose */}
       <circle cx="32" cy="34" r="1" fill={skin} opacity="0.6" />
-      {/* Ears */}
       <ellipse cx="18" cy="32" rx="2.5" ry="3" fill={skin} />
       <ellipse cx="46" cy="32" rx="2.5" ry="3" fill={skin} />
     </svg>
@@ -1666,8 +1559,10 @@ function StudentAvatar({ student, size='md', clickable=true, onAward, showName=t
   const [showMenu, setShowMenu] = useState(false);
 
   const px = { sm:48, md:72, lg:96, xl:120 }[size] || 72;
-  const xp = state ? computeStudentXP(state, student.id) : 0;
-  const rank = state ? computeStudentRank(state, student.id) : null;
+  const xp = state ? totalXP(state, student.id) : 0;
+  const rank = state
+    ? (state.students||[]).slice().sort((a,b)=>totalXP(state,b.id)-totalXP(state,a.id)).findIndex(s=>s.id===student.id)+1
+    : null;
 
   const handleClick = () => { if (clickable && onAward) setShowMenu(true); };
 
@@ -1676,28 +1571,19 @@ function StudentAvatar({ student, size='md', clickable=true, onAward, showName=t
     setBouncing(true);
     setShowMenu(false);
     setTimeout(() => setBouncing(false), 500);
-    /* star burst */
     for (let i = 0; i < 5; i++) {
       const el = document.createElement('div');
       el.textContent = '⭐';
-      el.style.cssText = `position:fixed;font-size:18px;pointer-events:none;z-index:9999;
-        top:${window.innerHeight/2}px;left:${window.innerWidth/2}px;
-        animation:particle-float 0.8s ease-out forwards;
-        --tx:${(Math.random()-0.5)*60}px`;
+      el.style.cssText = `position:fixed;font-size:18px;pointer-events:none;z-index:9999;top:${window.innerHeight/2}px;left:${window.innerWidth/2}px;animation:av-particle 0.8s ease-out forwards;--tx:${(Math.random()-0.5)*60}px`;
       document.body.appendChild(el);
       setTimeout(() => el.remove(), 800);
     }
   };
 
-  /* inject keyframe once */
-  if (typeof document !== 'undefined' && !document.getElementById('avatar-kf')) {
+  if (typeof document !== 'undefined' && !document.getElementById('av-kf')) {
     const s = document.createElement('style');
-    s.id = 'avatar-kf';
-    s.textContent = `
-      @keyframes av-bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
-      @keyframes particle-float{0%{opacity:1;transform:translateY(0) translateX(0)}100%{opacity:0;transform:translateY(-40px) translateX(var(--tx))}}
-      .av-bounce{animation:av-bounce 0.5s ease-in-out}
-    `;
+    s.id = 'av-kf';
+    s.textContent = `@keyframes av-bounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}@keyframes av-particle{0%{opacity:1;transform:translateY(0) translateX(0)}100%{opacity:0;transform:translateY(-40px) translateX(var(--tx))}}.av-bounce{animation:av-bounce 0.5s ease-in-out}`;
     document.head.appendChild(s);
   }
 
@@ -1708,48 +1594,25 @@ function StudentAvatar({ student, size='md', clickable=true, onAward, showName=t
       <div
         className={bouncing ? 'av-bounce' : ''}
         onClick={handleClick}
-        style={{
-          width:px, height:px, cursor: clickable && onAward ? 'pointer' : 'default',
-          borderRadius:'50%', overflow:'hidden', background: COLORS?.panelAlt || '#EAF0FE',
-          border:`3px solid ${COLORS?.border || '#DCE4F7'}`,
-          display:'flex', alignItems:'center', justifyContent:'center',
-          transition:'transform 0.1s',
-          boxShadow: clickable && onAward ? '0 4px 12px rgba(42,79,214,0.2)' : 'none',
-        }}
-        title={clickable && onAward ? `Click to award ${student.name}` : student.name}
+        style={{width:px,height:px,cursor:clickable&&onAward?'pointer':'default',borderRadius:'50%',overflow:'hidden',background:COLORS?.panelAlt||'#EAF0FE',border:`3px solid ${COLORS?.border||'#DCE4F7'}`,display:'flex',alignItems:'center',justifyContent:'center',boxShadow:clickable&&onAward?'0 4px 12px rgba(42,79,214,0.2)':'none'}}
+        title={clickable&&onAward?`Click to award ${student.name}`:student.name}
       >
-        {av
-          ? <AvatarSVG av={av} size={px - 6} />
-          : <span style={{fontSize: px * 0.4, fontWeight:'bold', color: COLORS?.textMuted}}>{fallback}</span>
-        }
+        {av ? <AvatarSVG av={av} size={px-6} /> : <span style={{fontSize:px*0.4,fontWeight:'bold',color:COLORS?.textMuted}}>{fallback}</span>}
       </div>
 
       {showRank && rank && (
-        <div style={{
-          position:'absolute', top:-6, right:-6,
-          width:22, height:22, borderRadius:'50%',
-          background: rank===1 ? COLORS.xp : rank===2 ? '#C0C0C0' : '#CD7F32',
-          color:'white', fontSize:10, fontWeight:'bold',
-          display:'flex', alignItems:'center', justifyContent:'center',
-        }}>#{rank}</div>
+        <div style={{position:'absolute',top:-6,right:-6,width:22,height:22,borderRadius:'50%',background:rank===1?COLORS.xp:rank===2?'#C0C0C0':'#CD7F32',color:'white',fontSize:10,fontWeight:'bold',display:'flex',alignItems:'center',justifyContent:'center'}}>#{rank}</div>
       )}
 
-      {showName && <div style={{fontSize:11,fontWeight:'bold',textAlign:'center',color: COLORS?.text}}>{student.name}</div>}
-      {showXP && <div style={{fontSize:10,color: COLORS?.xp, fontWeight:'bold'}}>{xp} XP</div>}
+      {showName && <div style={{fontSize:11,fontWeight:'bold',textAlign:'center',color:COLORS?.text}}>{student.name}</div>}
+      {showXP && <div style={{fontSize:10,color:COLORS?.xp,fontWeight:'bold'}}>{xp} XP</div>}
 
       {showMenu && (
-        <div
-          style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center'}}
-          onClick={()=>setShowMenu(false)}
-        >
-          <div
-            style={{background:'white',borderRadius:16,padding:24,maxWidth:380,width:'90%',boxShadow:'0 20px 40px rgba(0,0,0,0.2)'}}
-            onClick={e=>e.stopPropagation()}
-          >
-            {/* Student avatar preview */}
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:1000,display:'flex',alignItems:'center',justifyContent:'center'}} onClick={()=>setShowMenu(false)}>
+          <div style={{background:'white',borderRadius:16,padding:24,maxWidth:380,width:'90%',boxShadow:'0 20px 40px rgba(0,0,0,0.2)'}} onClick={e=>e.stopPropagation()}>
             <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:16}}>
-              <div style={{width:56,height:56,borderRadius:'50%',overflow:'hidden',border:`2px solid ${COLORS?.border}`}}>
-                {av ? <AvatarSVG av={av} size={52} /> : <span style={{fontSize:24}}>{fallback}</span>}
+              <div style={{width:56,height:56,borderRadius:'50%',overflow:'hidden',border:`2px solid ${COLORS?.border}`,background:COLORS?.panelAlt}}>
+                {av ? <AvatarSVG av={av} size={52} /> : <span style={{fontSize:24,lineHeight:'52px'}}>{fallback}</span>}
               </div>
               <div>
                 <div style={{fontWeight:'bold',fontSize:16}}>{student.name}</div>
@@ -1758,29 +1621,13 @@ function StudentAvatar({ student, size='md', clickable=true, onAward, showName=t
             </div>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,maxHeight:280,overflowY:'auto',marginBottom:16}}>
               {(state?.behaviors||[]).filter(b=>b.type==='positive').slice(0,10).map(b=>(
-                <button
-                  key={b.id}
-                  onClick={()=>handleAward(b)}
-                  style={{
-                    padding:10, border:`1px solid ${COLORS?.border}`,
-                    borderRadius:8, background:COLORS?.panelAlt,
-                    cursor:'pointer', fontSize:12, textAlign:'left',
-                    transition:'background 0.15s',
-                  }}
-                  onMouseEnter={e=>e.target.style.background=`${COLORS?.robotics}22`}
-                  onMouseLeave={e=>e.target.style.background=COLORS?.panelAlt}
-                >
+                <button key={b.id} onClick={()=>handleAward(b)} style={{padding:10,border:`1px solid ${COLORS?.border}`,borderRadius:8,background:COLORS?.panelAlt,cursor:'pointer',fontSize:12,textAlign:'left'}}>
                   <div style={{fontWeight:'bold',marginBottom:2}}>{b.name}</div>
                   <div style={{fontSize:11,color:COLORS?.xp}}>+{b.points} XP</div>
                 </button>
               ))}
             </div>
-            <button
-              onClick={()=>setShowMenu(false)}
-              style={{width:'100%',padding:10,borderRadius:8,border:'none',background:COLORS?.robotics,color:'white',fontWeight:'bold',cursor:'pointer'}}
-            >
-              Cancel
-            </button>
+            <button onClick={()=>setShowMenu(false)} style={{width:'100%',padding:10,borderRadius:8,border:'none',background:COLORS?.robotics,color:'white',fontWeight:'bold',cursor:'pointer'}}>Cancel</button>
           </div>
         </div>
       )}
@@ -1788,35 +1635,76 @@ function StudentAvatar({ student, size='md', clickable=true, onAward, showName=t
   );
 }
 
-/* ---------- Dashboard calculation helpers ---------- */
+/* ---------- Avatar Classroom Tab ---------- */
+function AvatarClassroomTab({ state, persist, classId, COLORS, onAward }) {
+  const students = classId ? state.students.filter(s=>s.classId===classId) : state.students;
+
+  React.useEffect(() => {
+    const missing = students.filter(s=>!state.studentAvatars[s.id]);
+    if (!missing.length) return;
+    const newAvatars = { ...state.studentAvatars };
+    missing.forEach(s => {
+      const cfg = state.classGenderConfig?.[s.classId];
+      const gender = cfg==='girls'?'female':cfg==='boys'?'male':Math.random()>0.5?'male':'female';
+      newAvatars[s.id] = generateAvatar(s.id, gender);
+    });
+    persist(prev => ({ ...prev, studentAvatars: newAvatars }));
+  }, [students.length]);
+
+  const handleAward = (studentId, behaviorId, points) => {
+    onAward({ studentIds:[studentId], behaviorIds:[behaviorId], pointsOverride:points, comment:'' });
+  };
+
+  return (
+    <div>
+      <div style={{marginBottom:20}}>
+        <h2 style={{fontSize:20,fontWeight:'bold',color:COLORS.text,margin:'0 0 4px'}}>🎭 Student Avatars</h2>
+        <p style={{margin:0,fontSize:12,color:COLORS.textMuted}}>Click any avatar to award points instantly</p>
+      </div>
+      {students.length===0 && <div style={{textAlign:'center',padding:40,color:COLORS.textMuted}}>No students yet — add students to see their avatars!</div>}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill, minmax(110px, 1fr))',gap:16}}>
+        {students.map(student => {
+          const xp = totalXP(state, student.id);
+          const rank = students.slice().sort((a,b)=>totalXP(state,b.id)-totalXP(state,a.id)).findIndex(s=>s.id===student.id)+1;
+          return (
+            <div key={student.id}
+              style={{background:COLORS.panel,border:`1px solid ${COLORS.border}`,borderRadius:14,padding:12,textAlign:'center',cursor:'pointer'}}
+              onMouseEnter={e=>e.currentTarget.style.boxShadow=`0 4px 16px ${COLORS.robotics}33`}
+              onMouseLeave={e=>e.currentTarget.style.boxShadow='none'}
+            >
+              <StudentAvatar student={student} size="md" clickable onAward={handleAward} showName={false} state={state} COLORS={COLORS} />
+              <div style={{fontWeight:'bold',fontSize:12,marginTop:6,color:COLORS.text}}>{student.name}</div>
+              <div style={{fontSize:11,color:COLORS.xp,fontWeight:'bold'}}>{xp} XP</div>
+              <div style={{fontSize:10,color:COLORS.textMuted}}>Rank #{rank}</div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Dashboard helpers ---------- */
 function calcPointsOverTime(state, classId, days=30) {
   const map = {};
-  for (let i=0;i<days;i++) {
-    const d = new Date(); d.setDate(d.getDate()-days+i+1);
-    map[d.toISOString().split('T')[0]] = 0;
-  }
-  const ids = new Set((classId ? state.students.filter(s=>s.classId===classId) : state.students).map(s=>s.id));
-  state.behaviorLog.forEach(l => {
-    const dk = (l.date||l.timestamp||'').split('T')[0];
-    if (ids.has(l.studentId) && map[dk]!==undefined) map[dk] += (l.points||0);
-  });
+  for (let i=0;i<days;i++) { const d=new Date(); d.setDate(d.getDate()-days+i+1); map[d.toISOString().split('T')[0]]=0; }
+  const ids = new Set((classId?state.students.filter(s=>s.classId===classId):state.students).map(s=>s.id));
+  state.behaviorLog.forEach(l => { const dk=(l.date||l.timestamp||'').split('T')[0]; if(ids.has(l.studentId)&&map[dk]!==undefined) map[dk]+=(l.points||0); });
   return Object.entries(map).map(([date,points])=>({date:date.slice(5),points}));
 }
 
 function calcTopStudents(state, classId, n=3) {
-  const students = classId ? state.students.filter(s=>s.classId===classId) : state.students;
-  return students
-    .map(s=>({student:s, xp:computeStudentXP(state,s.id)}))
-    .sort((a,b)=>b.xp-a.xp).slice(0,n);
+  const students = classId?state.students.filter(s=>s.classId===classId):state.students;
+  return students.map(s=>({student:s,xp:totalXP(state,s.id)})).sort((a,b)=>b.xp-a.xp).slice(0,n);
 }
 
 function calcTopClasses(state, n=3) {
   return (state.classes||[])
-    .map(c=>{
-      const ss=state.students.filter(s=>s.classId===c.id);
-      const totalXP=ss.reduce((sum,s)=>sum+computeStudentXP(state,s.id),0);
-      return {cls:c, totalXP, count:ss.length, avgXP:ss.length?Math.round(totalXP/ss.length):0,
-        topStudents:ss.map(s=>({student:s,xp:computeStudentXP(state,s.id)})).sort((a,b)=>b.xp-a.xp).slice(0,3)};
+    .map(c => {
+      const ss = state.students.filter(s=>s.classId===c.id);
+      const clsXP = ss.reduce((sum,s)=>sum+totalXP(state,s.id),0);
+      return { cls:c, totalXP:clsXP, count:ss.length, avgXP:ss.length?Math.round(clsXP/ss.length):0,
+        topStudents:ss.map(s=>({student:s,xp:totalXP(state,s.id)})).sort((a,b)=>b.xp-a.xp).slice(0,3) };
     })
     .sort((a,b)=>b.totalXP-a.totalXP).slice(0,n);
 }
@@ -1827,29 +1715,21 @@ function TeacherAnalyticsDashboard({ state, classId, COLORS }) {
   const topStudents = calcTopStudents(state, classId, 3);
   const topClasses = calcTopClasses(state, 3);
   const pointsData = calcPointsOverTime(state, classId, 30);
-  const roster = classId ? state.students.filter(s=>s.classId===classId) : state.students;
-  const totalXP = roster.reduce((s,st)=>s+computeStudentXP(state,st.id),0);
-  const avgXP = roster.length ? Math.round(totalXP/roster.length) : 0;
-
-  const medal = ['🥇','🥈','🥉'];
-  const medalColor = [COLORS.xp,'#C0C0C0','#CD7F32'];
+  const roster = classId?state.students.filter(s=>s.classId===classId):state.students;
+  const rosterXP = roster.reduce((s,st)=>s+totalXP(state,st.id),0);
+  const avgXP = roster.length?Math.round(rosterXP/roster.length):0;
+  const medal=['🥇','🥈','🥉'];
+  const medalColor=[COLORS.xp,'#C0C0C0','#CD7F32'];
 
   return (
     <div style={{paddingBottom:60}}>
-      {/* Header */}
       <div style={{marginBottom:24}}>
         <h1 style={{fontSize:22,fontWeight:'bold',color:COLORS.text,margin:'0 0 4px'}}>📊 Analytics Dashboard</h1>
-        <p style={{margin:0,fontSize:12,color:COLORS.textMuted}}>{classId?`Showing class data`:'All classes combined'}</p>
+        <p style={{margin:0,fontSize:12,color:COLORS.textMuted}}>{classId?'Showing class data':'All classes combined'}</p>
       </div>
 
-      {/* Quick Stats */}
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(110px,1fr))',gap:12,marginBottom:24}}>
-        {[
-          {label:'Total XP',value:totalXP,color:COLORS.xp},
-          {label:'Avg/Student',value:avgXP,color:COLORS.robotics},
-          {label:'Students',value:roster.length,color:COLORS.behavior},
-          {label:'Classes',value:(state.classes||[]).length,color:COLORS.reward},
-        ].map(s=>(
+        {[{label:'Total XP',value:rosterXP,color:COLORS.xp},{label:'Avg/Student',value:avgXP,color:COLORS.robotics},{label:'Students',value:roster.length,color:COLORS.behavior},{label:'Classes',value:(state.classes||[]).length,color:COLORS.reward}].map(s=>(
           <div key={s.label} style={{background:COLORS.panel,border:`1px solid ${COLORS.border}`,borderRadius:10,padding:12}}>
             <div style={{fontSize:10,color:COLORS.textMuted,fontWeight:'bold',marginBottom:4}}>{s.label}</div>
             <div style={{fontSize:22,fontWeight:'bold',color:s.color}}>{s.value}</div>
@@ -1857,14 +1737,10 @@ function TeacherAnalyticsDashboard({ state, classId, COLORS }) {
         ))}
       </div>
 
-      {/* Top Students + Top Classes side by side */}
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:24}}>
-        {/* Top Students */}
         <div style={{background:COLORS.panel,border:`1px solid ${COLORS.border}`,borderRadius:12,padding:16}}>
-          <div style={{fontWeight:'bold',fontSize:14,marginBottom:12,display:'flex',alignItems:'center',gap:6}}>
-            🏆 Top Students
-          </div>
-          {topStudents.length===0 && <div style={{color:COLORS.textMuted,fontSize:12}}>No students yet</div>}
+          <div style={{fontWeight:'bold',fontSize:14,marginBottom:12}}>🏆 Top Students</div>
+          {topStudents.length===0&&<div style={{color:COLORS.textMuted,fontSize:12}}>No students yet</div>}
           {topStudents.map(({student,xp},i)=>(
             <div key={student.id} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 0',borderBottom:i<2?`1px solid ${COLORS.border}`:'none'}}>
               <span style={{fontSize:20}}>{medal[i]}</span>
@@ -1873,29 +1749,22 @@ function TeacherAnalyticsDashboard({ state, classId, COLORS }) {
                 <div style={{fontSize:12,fontWeight:'bold',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{student.name}</div>
                 <div style={{fontSize:11,color:COLORS.textMuted}}>{xp} XP</div>
               </div>
-              <div style={{width:18,height:18,borderRadius:'50%',background:medalColor[i],display:'flex',alignItems:'center',justifyContent:'center',fontSize:9,color:'white',fontWeight:'bold'}}>
-                #{i+1}
-              </div>
+              <div style={{width:18,height:18,borderRadius:'50%',background:medalColor[i],display:'flex',alignItems:'center',justifyContent:'center',fontSize:9,color:'white',fontWeight:'bold'}}>#{i+1}</div>
             </div>
           ))}
         </div>
 
-        {/* Top Classes */}
         <div style={{background:COLORS.panel,border:`1px solid ${COLORS.border}`,borderRadius:12,padding:16}}>
-          <div style={{fontWeight:'bold',fontSize:14,marginBottom:12,display:'flex',alignItems:'center',gap:6}}>
-            🏆 Top Classes
-          </div>
-          {topClasses.length===0 && <div style={{color:COLORS.textMuted,fontSize:12}}>No classes yet</div>}
-          {topClasses.map(({cls,totalXP,count,avgXP:avg},i)=>(
+          <div style={{fontWeight:'bold',fontSize:14,marginBottom:12}}>🏆 Top Classes</div>
+          {topClasses.length===0&&<div style={{color:COLORS.textMuted,fontSize:12}}>No classes yet</div>}
+          {topClasses.map(({cls,totalXP:clsXP,count,avgXP:avg},i)=>(
             <div key={cls.id} style={{padding:'8px 0',borderBottom:i<2?`1px solid ${COLORS.border}`:'none'}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}}>
-                <div style={{fontWeight:'bold',fontSize:13,display:'flex',alignItems:'center',gap:6}}>
-                  <span>{medal[i]}</span>{cls.name}
-                </div>
-                <span style={{fontSize:11,fontWeight:'bold',color:COLORS.xp}}>{totalXP} XP</span>
+                <div style={{fontWeight:'bold',fontSize:13,display:'flex',alignItems:'center',gap:6}}><span>{medal[i]}</span>{cls.name}</div>
+                <span style={{fontSize:11,fontWeight:'bold',color:COLORS.xp}}>{clsXP} XP</span>
               </div>
               <div style={{width:'100%',height:6,background:COLORS.border,borderRadius:3}}>
-                <div style={{height:'100%',borderRadius:3,background:medalColor[i],width:`${Math.min(100,totalXP/50)}%`,maxWidth:'100%'}} />
+                <div style={{height:'100%',borderRadius:3,background:medalColor[i],width:`${Math.min(100,clsXP/50)}%`,maxWidth:'100%'}} />
               </div>
               <div style={{fontSize:10,color:COLORS.textMuted,marginTop:4}}>{count} students • avg {avg} XP</div>
             </div>
@@ -1903,36 +1772,29 @@ function TeacherAnalyticsDashboard({ state, classId, COLORS }) {
         </div>
       </div>
 
-      {/* Trend Charts */}
       <div style={{background:COLORS.panel,border:`1px solid ${COLORS.border}`,borderRadius:12,padding:16}}>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:16}}>
           <div style={{fontWeight:'bold',fontSize:14}}>📈 Trends (Last 30 Days)</div>
           <div style={{display:'flex',gap:6}}>
             {[{id:'points',label:'Points'},{id:'classes',label:'Classes'}].map(o=>(
-              <button key={o.id} onClick={()=>setChart(o.id)}
-                style={{fontSize:11,padding:'4px 10px',borderRadius:6,border:'none',cursor:'pointer',fontWeight:'bold',
-                  background:chart===o.id?COLORS.robotics:COLORS.panelAlt,
-                  color:chart===o.id?COLORS.onAccent:COLORS.text}}
-              >{o.label}</button>
+              <button key={o.id} onClick={()=>setChart(o.id)} style={{fontSize:11,padding:'4px 10px',borderRadius:6,border:'none',cursor:'pointer',fontWeight:'bold',background:chart===o.id?COLORS.robotics:COLORS.panelAlt,color:chart===o.id?COLORS.onAccent:COLORS.text}}>{o.label}</button>
             ))}
           </div>
         </div>
-
-        {chart==='points' && (
+        {chart==='points'&&(
           <ResponsiveContainer width="100%" height={220}>
             <LineChart data={pointsData}>
               <CartesianGrid strokeDasharray="3 3" stroke={COLORS.border} />
-              <XAxis dataKey="date" stroke={COLORS.textMuted} style={{fontSize:10}} tick={{fontSize:10}} />
-              <YAxis stroke={COLORS.textMuted} style={{fontSize:10}} tick={{fontSize:10}} />
+              <XAxis dataKey="date" stroke={COLORS.textMuted} tick={{fontSize:10}} />
+              <YAxis stroke={COLORS.textMuted} tick={{fontSize:10}} />
               <Tooltip contentStyle={{background:COLORS.panel,border:`1px solid ${COLORS.border}`,fontSize:12}} />
               <Line type="monotone" dataKey="points" stroke={COLORS.robotics} strokeWidth={2} dot={false} />
             </LineChart>
           </ResponsiveContainer>
         )}
-
-        {chart==='classes' && (
+        {chart==='classes'&&(
           <ResponsiveContainer width="100%" height={220}>
-            <BarChart data={topClasses.map(({cls,totalXP})=>({name:cls.name,XP:totalXP}))}>
+            <BarChart data={topClasses.map(({cls,totalXP:x})=>({name:cls.name,XP:x}))}>
               <CartesianGrid strokeDasharray="3 3" stroke={COLORS.border} />
               <XAxis dataKey="name" stroke={COLORS.textMuted} tick={{fontSize:10}} />
               <YAxis stroke={COLORS.textMuted} tick={{fontSize:10}} />
@@ -1949,79 +1811,48 @@ function TeacherAnalyticsDashboard({ state, classId, COLORS }) {
 /* ---------- Public Homepage ---------- */
 function PublicHomepage({ state, onGoToAuth, COLORS }) {
   const topClasses = calcTopClasses(state, 3);
-  const topStudents = (state.students||[])
-    .map(s=>({student:s,xp:computeStudentXP(state,s.id)}))
-    .sort((a,b)=>b.xp-a.xp).slice(0,5);
-
+  const topStudents = (state.students||[]).map(s=>({student:s,xp:totalXP(state,s.id)})).sort((a,b)=>b.xp-a.xp).slice(0,5);
   const medal=['🥇','🥈','🥉'];
 
   return (
     <div style={{background:COLORS.bg,minHeight:'100vh',fontFamily:'inherit'}}>
-      {/* Nav */}
       <nav style={{background:'white',borderBottom:`1px solid ${COLORS.border}`,padding:'12px 24px',display:'flex',justifyContent:'space-between',alignItems:'center',position:'sticky',top:0,zIndex:100}}>
         <div style={{fontSize:22,fontWeight:'bold',color:COLORS.robotics}}>⭐ نجم</div>
-        <button
-          onClick={onGoToAuth}
-          style={{padding:'8px 20px',borderRadius:8,border:'none',background:COLORS.robotics,color:'white',fontWeight:'bold',cursor:'pointer',fontSize:13}}
-        >Sign In</button>
+        <div style={{display:'flex',gap:12}}>
+          <button onClick={onGoToAuth} style={{padding:'8px 20px',borderRadius:8,border:`2px solid ${COLORS.robotics}`,background:'transparent',color:COLORS.robotics,fontWeight:'bold',cursor:'pointer',fontSize:13}}>Sign In</button>
+          <button onClick={onGoToAuth} style={{padding:'8px 20px',borderRadius:8,border:'none',background:COLORS.robotics,color:'white',fontWeight:'bold',cursor:'pointer',fontSize:13}}>Get Started</button>
+        </div>
       </nav>
 
-      {/* Hero */}
-      <section style={{padding:'80px 24px 60px',textAlign:'center',background:`linear-gradient(135deg, ${COLORS.robotics}11 0%, ${COLORS.bg} 60%)`}}>
+      <section style={{padding:'80px 24px 60px',textAlign:'center',background:`linear-gradient(135deg,${COLORS.robotics}11 0%,${COLORS.bg} 60%)`}}>
         <div style={{maxWidth:640,margin:'0 auto'}}>
-          <div style={{fontSize:48,marginBottom:16}}>⭐🏆🎯</div>
-          <h1 style={{fontSize:36,fontWeight:'bold',color:COLORS.text,margin:'0 0 16px',lineHeight:1.2}}>
-            Make Classroom Rewards <span style={{color:COLORS.robotics}}>Fun</span>
-          </h1>
-          <p style={{fontSize:16,color:COLORS.textMuted,margin:'0 0 32px',lineHeight:1.6}}>
-            Click student avatars to award points, track progress, and celebrate every achievement. Every student is a star! ✨
-          </p>
-          <button
-            onClick={onGoToAuth}
-            style={{fontSize:16,fontWeight:'bold',padding:'14px 36px',borderRadius:12,border:'none',background:COLORS.robotics,color:'white',cursor:'pointer',boxShadow:`0 8px 24px ${COLORS.robotics}44`}}
-          >Get Started Free →</button>
-
-          {/* Stats row */}
-          <div style={{display:'flex',justifyContent:'center',gap:40,marginTop:48,flexWrap:'wrap'}}>
-            {[{n:'Click',label:'Avatars to award'},{n:'Track',label:'Progress in real-time'},{n:'Celebrate',label:'Every achievement'}].map(s=>(
-              <div key={s.n} style={{textAlign:'center'}}>
-                <div style={{fontSize:20,fontWeight:'bold',color:COLORS.robotics}}>{s.n}</div>
-                <div style={{fontSize:12,color:COLORS.textMuted}}>{s.label}</div>
-              </div>
-            ))}
-          </div>
+          <div style={{fontSize:56,marginBottom:16}}>⭐</div>
+          <h1 style={{fontSize:38,fontWeight:'bold',color:COLORS.text,margin:'0 0 16px',lineHeight:1.2}}>Make Classroom Rewards <span style={{color:COLORS.robotics}}>Fun</span></h1>
+          <p style={{fontSize:16,color:COLORS.textMuted,margin:'0 0 32px',lineHeight:1.6}}>Click student avatars to award points instantly, track progress, and celebrate every achievement. Every student is a star! ✨</p>
+          <button onClick={onGoToAuth} style={{fontSize:16,fontWeight:'bold',padding:'14px 36px',borderRadius:12,border:'none',background:COLORS.robotics,color:'white',cursor:'pointer',boxShadow:`0 8px 24px ${COLORS.robotics}44`}}>Get Started Free →</button>
         </div>
       </section>
 
-      {/* Top Classes */}
-      {topClasses.length > 0 && (
+      {topClasses.length>0&&(
         <section style={{padding:'60px 24px',background:'white'}}>
           <div style={{maxWidth:1000,margin:'0 auto'}}>
             <h2 style={{fontSize:26,fontWeight:'bold',textAlign:'center',color:COLORS.text,margin:'0 0 8px'}}>🏆 Top Classes This Month</h2>
             <p style={{textAlign:'center',color:COLORS.textMuted,margin:'0 0 40px',fontSize:14}}>Leading the way in points and participation</p>
             <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(260px,1fr))',gap:20}}>
-              {topClasses.map(({cls,totalXP,count,topStudents:ts},i)=>(
-                <div key={cls.id} style={{
-                  border:`2px solid ${i===0?COLORS.xp:i===1?'#C0C0C0':'#CD7F32'}`,
-                  borderRadius:16,padding:20,background:COLORS.panel,
-                  boxShadow:`0 4px 16px ${i===0?COLORS.xp+'22':'transparent'}`,
-                }}>
+              {topClasses.map(({cls,totalXP:clsXP,count,topStudents:ts},i)=>(
+                <div key={cls.id} style={{border:`2px solid ${i===0?COLORS.xp:i===1?'#C0C0C0':'#CD7F32'}`,borderRadius:16,padding:20,background:COLORS.panel}}>
                   <div style={{fontSize:32,marginBottom:8}}>{medal[i]}</div>
                   <h3 style={{fontSize:18,fontWeight:'bold',margin:'0 0 4px',color:COLORS.text}}>{cls.name}</h3>
-                  <div style={{fontSize:12,color:COLORS.textMuted,marginBottom:12}}>{count} students • {totalXP} total XP</div>
-                  {/* Progress bar */}
+                  <div style={{fontSize:12,color:COLORS.textMuted,marginBottom:12}}>{count} students • {clsXP} total XP</div>
                   <div style={{width:'100%',height:8,background:COLORS.border,borderRadius:4,marginBottom:16}}>
-                    <div style={{height:'100%',borderRadius:4,background:i===0?COLORS.xp:i===1?'#C0C0C0':'#CD7F32',width:`${Math.min(100,(totalXP/2000)*100)}%`}} />
+                    <div style={{height:'100%',borderRadius:4,background:i===0?COLORS.xp:i===1?'#C0C0C0':'#CD7F32',width:`${Math.min(100,(clsXP/2000)*100)}%`}} />
                   </div>
-                  {/* Top students in class */}
                   <div style={{fontSize:11,color:COLORS.textFaint,fontWeight:'bold',marginBottom:8}}>TOP STUDENTS</div>
                   <div style={{display:'flex',gap:8}}>
                     {ts.map(({student})=>(
                       <div key={student.id} style={{textAlign:'center'}}>
                         <div style={{width:40,height:40,borderRadius:'50%',overflow:'hidden',border:`2px solid ${COLORS.border}`,background:COLORS.panelAlt}}>
-                          {state.studentAvatars[student.id]
-                            ? <AvatarSVG av={state.studentAvatars[student.id]} size={38} />
-                            : <span style={{fontSize:18,lineHeight:'38px'}}>{student.name[0]}</span>}
+                          {state.studentAvatars[student.id]?<AvatarSVG av={state.studentAvatars[student.id]} size={38} />:<span style={{fontSize:18,lineHeight:'38px'}}>{student.name[0]}</span>}
                         </div>
                         <div style={{fontSize:9,marginTop:2,color:COLORS.textMuted}}>{student.name.split(' ')[0]}</div>
                       </div>
@@ -2034,30 +1865,20 @@ function PublicHomepage({ state, onGoToAuth, COLORS }) {
         </section>
       )}
 
-      {/* Top Students */}
-      {topStudents.length > 0 && (
+      {topStudents.length>0&&(
         <section style={{padding:'60px 24px'}}>
           <div style={{maxWidth:1000,margin:'0 auto'}}>
             <h2 style={{fontSize:26,fontWeight:'bold',textAlign:'center',color:COLORS.text,margin:'0 0 8px'}}>⭐ Star Students</h2>
-            <p style={{textAlign:'center',color:COLORS.textMuted,margin:'0 0 40px',fontSize:14}}>Highest ranked students across all classes</p>
+            <p style={{textAlign:'center',color:COLORS.textMuted,margin:'0 0 40px',fontSize:14}}>Highest ranked across all classes</p>
             <div style={{display:'flex',gap:16,justifyContent:'center',flexWrap:'wrap'}}>
               {topStudents.map(({student,xp},i)=>(
-                <div key={student.id} style={{
-                  textAlign:'center',padding:20,background:'white',
-                  borderRadius:16,border:`1px solid ${COLORS.border}`,
-                  minWidth:120,boxShadow:i===0?`0 8px 24px ${COLORS.xp}33`:'none',
-                  transform:i===0?'scale(1.05)':'scale(1)',
-                }}>
-                  {i<3 && <div style={{fontSize:20,marginBottom:4}}>{medal[i]}</div>}
+                <div key={student.id} style={{textAlign:'center',padding:20,background:'white',borderRadius:16,border:`1px solid ${COLORS.border}`,minWidth:120,boxShadow:i===0?`0 8px 24px ${COLORS.xp}33`:'none',transform:i===0?'scale(1.05)':'scale(1)'}}>
+                  {i<3&&<div style={{fontSize:20,marginBottom:4}}>{medal[i]}</div>}
                   <div style={{width:72,height:72,borderRadius:'50%',overflow:'hidden',border:`3px solid ${i===0?COLORS.xp:COLORS.border}`,margin:'0 auto 8px',background:COLORS.panelAlt}}>
-                    {state.studentAvatars[student.id]
-                      ? <AvatarSVG av={state.studentAvatars[student.id]} size={68} />
-                      : <span style={{fontSize:32,lineHeight:'68px'}}>{student.name[0]}</span>}
+                    {state.studentAvatars[student.id]?<AvatarSVG av={state.studentAvatars[student.id]} size={68} />:<span style={{fontSize:32,lineHeight:'68px'}}>{student.name[0]}</span>}
                   </div>
                   <div style={{fontWeight:'bold',fontSize:13,marginBottom:4}}>{student.name}</div>
-                  <div style={{fontSize:11,color:COLORS.textMuted,marginBottom:6}}>
-                    {(state.classes||[]).find(c=>c.id===student.classId)?.name||''}
-                  </div>
+                  <div style={{fontSize:11,color:COLORS.textMuted,marginBottom:6}}>{(state.classes||[]).find(c=>c.id===student.classId)?.name||''}</div>
                   <div style={{fontSize:14,fontWeight:'bold',color:COLORS.xp}}>{xp} XP</div>
                 </div>
               ))}
@@ -2066,17 +1887,12 @@ function PublicHomepage({ state, onGoToAuth, COLORS }) {
         </section>
       )}
 
-      {/* CTA */}
       <section style={{padding:'60px 24px',background:`linear-gradient(135deg,${COLORS.robotics},${COLORS.robotics}CC)`,textAlign:'center'}}>
         <h2 style={{fontSize:26,fontWeight:'bold',color:'white',margin:'0 0 12px'}}>Ready to start?</h2>
-        <p style={{color:'rgba(255,255,255,0.8)',margin:'0 0 24px',fontSize:14}}>Join thousands of teachers making classrooms more fun</p>
-        <button
-          onClick={onGoToAuth}
-          style={{padding:'14px 36px',borderRadius:12,border:'2px solid white',background:'transparent',color:'white',fontWeight:'bold',fontSize:16,cursor:'pointer'}}
-        >Create Free Account →</button>
+        <p style={{color:'rgba(255,255,255,0.8)',margin:'0 0 24px',fontSize:14}}>Join thousands of teachers making classrooms more engaging</p>
+        <button onClick={onGoToAuth} style={{padding:'14px 36px',borderRadius:12,border:'2px solid white',background:'transparent',color:'white',fontWeight:'bold',fontSize:16,cursor:'pointer'}}>Create Free Account →</button>
       </section>
 
-      {/* Footer */}
       <footer style={{background:COLORS.text,padding:'24px',textAlign:'center'}}>
         <div style={{fontSize:18,fontWeight:'bold',color:'white',marginBottom:4}}>⭐ نجم — Najm</div>
         <div style={{fontSize:12,color:'rgba(255,255,255,0.5)'}}>Every student is a star</div>
@@ -2268,10 +2084,7 @@ export default function App() {
         <PublicHomepage
           state={state}
           COLORS={COLORS}
-          onGoToAuth={() => {
-            if (session) { setRole('teacher'); }
-            else { setShowLogin(true); }
-          }}
+          onGoToAuth={() => { if (session) { setRole('teacher'); } else { setShowLogin(true); } }}
         />
         {showLogin && (
           <TeacherAuthModal onClose={() => setShowLogin(false)} onSuccess={() => { setShowLogin(false); setRole('teacher'); }} />
@@ -2884,10 +2697,6 @@ function TeacherApp({ state, persist, classId, email, setToast, db, session, man
     { id: 'classes', label: 'My Classes', icon: Building2 },
     { id: 'analytics-new', label: '📊 Dashboard', icon: BarChart3 },
     { id: 'avatars', label: '🎭 Avatars', icon: Users },
-    { id: 'bulk-award', label: '📦 Bulk Award', icon: Gift },
-    { id: 'timetable', label: '📅 Timetable', icon: CalendarDays },
-    { id: 'reports', label: '📝 Reports', icon: ClipboardList },
-    { id: 'seating', label: '🪑 Seating', icon: Users },
     { id: 'assessments', label: 'Assessments', icon: ClipboardList },
     { id: 'challenges', label: 'Challenges', icon: ListChecks },
     { id: 'missions', label: 'Missions', icon: Target },
@@ -2921,13 +2730,7 @@ function TeacherApp({ state, persist, classId, email, setToast, db, session, man
         {tab === 'overview' && <OverviewTab state={scoped} persist={persist} classId={classId} db={db} session={session} />}
         {tab === 'classes' && <TeacherClassesTab state={state} classes={manageableClasses || []} activeClassId={classId} db={db} onSwitch={onSwitchClass} />}
         {tab === 'analytics-new' && <TeacherAnalyticsDashboard state={scoped} classId={classId} COLORS={COLORS} />}
-        {tab === 'avatars' && (
-          <AvatarClassroomTab state={scoped} persist={persist} classId={classId} COLORS={COLORS} onAward={awardBehavior} />
-        )}
-        {tab === 'bulk-award' && <BulkAwardMode state={scoped} students={scoped.students} onAward={awardBehavior} onCancel={() => setTab('overview')} COLORS={COLORS} />}
-        {tab === 'timetable' && <TimetableModule state={scoped} persist={persist} COLORS={COLORS} />}
-        {tab === 'reports' && <StudentReportGenerator state={scoped} persist={persist} COLORS={COLORS} />}
-        {tab === 'seating' && <SeatingPlansModule state={scoped} persist={persist} COLORS={COLORS} onAward={awardBehavior} />}
+        {tab === 'avatars' && <AvatarClassroomTab state={scoped} persist={persist} classId={classId} COLORS={COLORS} onAward={awardBehavior} />}
         {tab === 'assessments' && <AssessmentsTab state={scoped} persist={persist} classId={classId} email={email} setToast={setToast} db={db} session={session} />}
         {tab === 'challenges' && <ChallengesTab state={state} persist={persist} classId={classId} scopedStudents={scoped.students} isAdmin={!classId} db={db} session={session} />}
         {tab === 'missions' && <MissionsTab state={scoped} persist={persist} classId={classId} db={db} session={session} />}
