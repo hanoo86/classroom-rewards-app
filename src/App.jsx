@@ -3292,7 +3292,6 @@ function TeacherApp({ state, persist, classId, email, setToast, db, session, man
     { id: 'overview', label: 'Overview', icon: LayoutGrid },
     { id: 'classes', label: 'My Classes', icon: Building2 },
     { id: 'analytics-new', label: '📊 Dashboard', icon: BarChart3 },
-    { id: 'avatars', label: '🎭 Avatars', icon: Users },
     { id: 'reports', label: '📝 Reports', icon: ClipboardList },
     { id: 'seating', label: '🪑 Seating', icon: Users },
     { id: 'assessments', label: 'Assessments', icon: ClipboardList },
@@ -3328,7 +3327,6 @@ function TeacherApp({ state, persist, classId, email, setToast, db, session, man
         {tab === 'overview' && <OverviewTab state={scoped} persist={persist} classId={classId} db={db} session={session} />}
         {tab === 'classes' && <TeacherClassesTab state={state} classes={manageableClasses || []} activeClassId={classId} db={db} onSwitch={onSwitchClass} />}
         {tab === 'analytics-new' && <TeacherAnalyticsDashboard state={scoped} classId={classId} COLORS={COLORS} />}
-        {tab === 'avatars' && <AvatarClassroomTab state={scoped} persist={persist} classId={classId} COLORS={COLORS} onAward={awardBehavior} />}
         {tab === 'reports' && <StudentReportGenerator state={scoped} persist={persist} COLORS={COLORS} />}
         {tab === 'seating' && <SeatingPlansModule state={scoped} persist={persist} COLORS={COLORS} onAward={awardBehavior} />}
         {tab === 'assessments' && <AssessmentsTab state={scoped} persist={persist} classId={classId} email={email} setToast={setToast} db={db} session={session} />}
@@ -3482,6 +3480,22 @@ function OverviewTab({ state, persist, classId, db, session }) {
   const [recentlyPicked, setRecentlyPicked] = useState([]);
   const spinTimer = useRef(null);
   useEffect(() => () => clearInterval(spinTimer.current), []);
+
+  // Auto-generate avatars for students who don't have one yet
+  useEffect(() => {
+    const localAvatars = (() => { try { return JSON.parse(localStorage.getItem('najm_avatars') || '{}'); } catch { return {}; } })();
+    const allAvatars = { ...localAvatars, ...state.studentAvatars };
+    const missing = state.students.filter(s => !allAvatars[s.id]);
+    if (!missing.length) return;
+    const newAvatars = { ...allAvatars };
+    missing.forEach(s => {
+      const cfg = state.classGenderConfig?.[s.classId];
+      const gender = cfg === 'girls' ? 'female' : cfg === 'boys' ? 'male' : Math.random() > 0.5 ? 'male' : 'female';
+      newAvatars[s.id] = generateAvatar(s.id, gender);
+    });
+    try { localStorage.setItem('najm_avatars', JSON.stringify(newAvatars)); } catch {}
+    persist(prev => ({ ...prev, studentAvatars: newAvatars }));
+  }, [state.students.length]);
   const roster = [...state.students].sort((a, b) => totalXP(state, b.id) - totalXP(state, a.id));
   const mostImproved = computeMostImproved(state);
   const needsEncouragement = computeNeedsEncouragement(state);
@@ -3577,55 +3591,96 @@ function OverviewTab({ state, persist, classId, db, session }) {
         )}
       </div>
 
-      <div className="rounded-2xl border overflow-hidden" style={{ borderColor: COLORS.border }}>
-        <div className="grid grid-cols-[1fr_auto_auto_auto] gap-2 px-4 py-2.5 text-[10px] font-bold uppercase tracking-wide" style={{ background: COLORS.panelAlt, color: COLORS.textFaint }}>
-          <div>Student</div><div className="w-14 text-right">Level</div><div className="w-16 text-right">XP</div><div className="w-14 text-right">Badges</div>
-        </div>
-        {roster.map(st => {
-          const lvl = levelInfo(totalXP(state, st.id));
-          const isOpen = expanded === st.id;
-          return (
-            <div key={st.id} className="border-t" style={{ borderColor: COLORS.border }}>
-              <button onClick={() => setExpanded(isOpen ? null : st.id)} className="w-full grid grid-cols-[1fr_auto_auto_auto] gap-2 px-4 py-3 items-center text-left transition">
-                <div className="flex items-center gap-2">
-                  <ChevronRight size={14} style={{ color: COLORS.textFaint, transform: isOpen ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }} />
-                  <Avatar name={st.name} id={st.id} size={26} />
-                  <span className="text-sm font-semibold">{st.name}</span>
-                </div>
-                <div className="w-14 text-right text-xs font-mono" style={{ color: COLORS.challenge }}>{lvl.level}</div>
-                <div className="w-16 text-right text-xs font-mono" style={{ color: COLORS.xp }}>{totalXP(state, st.id)}</div>
-                <div className="w-14 text-right text-xs font-mono">{(state.studentBadges[st.id] || []).length}</div>
-              </button>
-              {isOpen && (
-                <div className="px-4 pb-4 pt-1 grid md:grid-cols-2 gap-4" style={{ background: COLORS.panelSoft }}>
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="text-[10.5px] font-bold uppercase" style={{ color: COLORS.textFaint }}>Academic points</div>
-                      <div className="flex gap-1">
-                        <button onClick={() => addAcademic(st.id, 10)} className="text-[10px] px-2 py-1 rounded border font-semibold" style={{ borderColor: COLORS.border, color: COLORS.coding }}>+10</button>
-                        <button onClick={() => addAcademic(st.id, 25)} className="text-[10px] px-2 py-1 rounded border font-semibold" style={{ borderColor: COLORS.border, color: COLORS.coding }}>+25</button>
+      {/* Avatar Student Grid — clickable, fun, visual */}
+      {roster.length > 0 && (
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <SectionLabel icon={Users} color={COLORS.robotics}>Class Roster</SectionLabel>
+            <div className="text-[10px] font-bold" style={{ color: COLORS.textFaint }}>Click avatar to award ⭐</div>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(110px, 1fr))', gap: 12 }}>
+            {roster.map((st, idx) => {
+              const xp = totalXP(state, st.id);
+              const lvl = levelInfo(xp);
+              const badges = (state.studentBadges[st.id] || []).length;
+              const rank = idx + 1;
+              const isOpen = expanded === st.id;
+              const localAvatars = (() => { try { return JSON.parse(localStorage.getItem('najm_avatars') || '{}'); } catch { return {}; } })();
+              const av = state.studentAvatars?.[st.id] || localAvatars[st.id];
+              const rankColor = rank === 1 ? COLORS.xp : rank === 2 ? '#C0C0C0' : rank === 3 ? '#CD7F32' : COLORS.border;
+              return (
+                <div key={st.id}>
+                  <div
+                    onClick={() => setExpanded(isOpen ? null : st.id)}
+                    style={{
+                      background: isOpen ? `${COLORS.robotics}08` : COLORS.panel,
+                      border: `2px solid ${isOpen ? COLORS.robotics : rank <= 3 ? rankColor : COLORS.border}`,
+                      borderRadius: 16,
+                      padding: 12,
+                      textAlign: 'center',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                      position: 'relative',
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = `0 8px 20px ${COLORS.robotics}22`; }}
+                    onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; }}
+                  >
+                    {/* Rank badge */}
+                    {rank <= 3 && (
+                      <div style={{ position: 'absolute', top: -8, right: -8, width: 22, height: 22, borderRadius: '50%', background: rankColor, color: 'white', fontSize: 10, fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.2)' }}>
+                        {rank === 1 ? '🥇' : rank === 2 ? '🥈' : '🥉'}
                       </div>
+                    )}
+                    {/* Avatar */}
+                    <div style={{ width: 72, height: 72, borderRadius: '50%', overflow: 'hidden', border: `3px solid ${rank <= 3 ? rankColor : COLORS.border}`, background: COLORS.panelAlt, margin: '0 auto 8px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      {av
+                        ? <AvatarSVG av={av} size={68} />
+                        : <span style={{ fontSize: 28, fontWeight: 'bold', color: COLORS.textMuted }}>{st.name[0]}</span>}
                     </div>
-                    <div className="text-xl font-mono font-black" style={{ color: COLORS.coding }}>{state.academicPoints[st.id] || 0}</div>
+                    <div style={{ fontWeight: 'bold', fontSize: 12, color: COLORS.text, marginBottom: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{st.name}</div>
+                    <div style={{ fontSize: 13, fontWeight: 'bold', color: COLORS.xp }}>{xp} XP</div>
+                    <div style={{ fontSize: 10, color: COLORS.textMuted }}>Lv.{lvl.level} {badges > 0 ? `· ${badges}🏅` : ''}</div>
+                    <div style={{ fontSize: 10, color: COLORS.textFaint, marginTop: 2 }}>tap to expand</div>
                   </div>
-                  <div>
-                    <div className="text-[10.5px] font-bold uppercase mb-2 flex items-center gap-1.5" style={{ color: COLORS.textFaint }}><MessageSquare size={11} /> Private notes</div>
-                    <div className="flex gap-2 mb-2">
-                      <input value={noteDraft} onChange={e => setNoteDraft(e.target.value)} placeholder="Add a note\u2026" style={inputStyle} />
-                      <button onClick={() => { if (noteDraft.trim()) { addNote(st.id, noteDraft.trim()); setNoteDraft(''); } }} className="text-xs px-2.5 rounded-lg font-semibold shrink-0" style={{ background: COLORS.panelAlt, color: COLORS.text }}>Add</button>
-                    </div>
-                    <ul className="space-y-1 max-h-24 overflow-auto">
-                      {state.notes.filter(n => n.studentId === st.id).map(n => (
-                        <li key={n.id} className="text-[11px]" style={{ color: COLORS.textMuted }}><span style={{ color: COLORS.textFaint }}>{new Date(n.date).toLocaleDateString()}:</span> {n.text}</li>
+
+                  {/* Expanded panel below */}
+                  {isOpen && (
+                    <div style={{ background: COLORS.panelSoft, border: `1px solid ${COLORS.border}`, borderRadius: 12, padding: 14, marginTop: 4 }}>
+                      {/* Quick award buttons */}
+                      <div style={{ fontSize: 10, fontWeight: 'bold', color: COLORS.textFaint, marginBottom: 6 }}>QUICK AWARD</div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginBottom: 12 }}>
+                        {state.behaviors.filter(b => b.type === 'positive').slice(0, 4).map(b => (
+                          <button key={b.id}
+                            onClick={e => { e.stopPropagation(); db(() => dbAwardPoints({ studentId: st.id, classId: st.classId, category: b.category, name: b.name, points: b.points, awardedBy: session?.user?.id })); }}
+                            style={{ fontSize: 10, padding: '4px 8px', borderRadius: 8, border: 'none', background: COLORS.robotics, color: 'white', cursor: 'pointer', fontWeight: 'bold' }}>
+                            +{b.points} {b.name.split(' ')[0]}
+                          </button>
+                        ))}
+                      </div>
+                      {/* Academic */}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                        <div style={{ fontSize: 10, fontWeight: 'bold', color: COLORS.textFaint }}>ACADEMIC</div>
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          <button onClick={() => addAcademic(st.id, 10)} style={{ fontSize: 10, padding: '3px 8px', borderRadius: 6, border: `1px solid ${COLORS.border}`, background: 'white', color: COLORS.coding, cursor: 'pointer', fontWeight: 'bold' }}>+10</button>
+                          <button onClick={() => addAcademic(st.id, 25)} style={{ fontSize: 10, padding: '3px 8px', borderRadius: 6, border: `1px solid ${COLORS.border}`, background: 'white', color: COLORS.coding, cursor: 'pointer', fontWeight: 'bold' }}>+25</button>
+                        </div>
+                      </div>
+                      {/* Note */}
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <input value={noteDraft} onChange={e => setNoteDraft(e.target.value)} placeholder="Add a note…" style={{ ...inputStyle, fontSize: 11, padding: '5px 8px' }} />
+                        <button onClick={() => { if (noteDraft.trim()) { addNote(st.id, noteDraft.trim()); setNoteDraft(''); } }} style={{ fontSize: 10, padding: '5px 10px', borderRadius: 6, border: 'none', background: COLORS.panelAlt, color: COLORS.text, cursor: 'pointer', fontWeight: 'bold', whiteSpace: 'nowrap' }}>Add</button>
+                      </div>
+                      {state.notes.filter(n => n.studentId === st.id).slice(0, 2).map(n => (
+                        <div key={n.id} style={{ fontSize: 10, color: COLORS.textMuted, marginTop: 4 }}>{new Date(n.date).toLocaleDateString()}: {n.text}</div>
                       ))}
-                    </ul>
-                  </div>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
