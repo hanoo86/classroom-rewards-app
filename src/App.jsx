@@ -1482,14 +1482,15 @@ function ClassPickerScreen({ state, classes, onPick }) {
    REDESIGN — Avatars, Analytics Dashboard, Public Homepage
    ============================================================ */
 
-/* ---------- Star-character avatar trait tables ----------
-   Every student is their own little star mascot (matching the Najm/"star"
-   brand) instead of a generic face — a different color, expression and
-   accessory combo per student, deterministic by student id so it never
-   changes on reload. */
-const STAR_COLORS = ['#F0AC2E','#FF6FA0','#4ECDC4','#8B6BF2','#5FA867','#FF8C42','#4C8DE8','#E0703D','#D64E7A','#2FBF9F','#C9963D','#7C5CFC'];
-const STAR_FACES = ['happy','wink','sleepy','surprised','cool','silly','sparkle'];
-const STAR_ACCESSORIES = ['none','bow','cap','glasses','crown','headband','bowtie'];
+/* ---------- Avatar trait tables ---------- */
+const AVATAR_TOP_MALE = ['ShortHairTheCaesar','ShortHairShortFlat','ShortHairShortRound','ShortHairShortWaved','ShortHairSides','NoHair'];
+const AVATAR_TOP_FEMALE = ['LongHairBigHair','LongHairBob','LongHairBun','LongHairCurly','LongHairStraight','LongHairStraight2','Hijab'];
+const AVATAR_CLOTHE = ['BlazerAndShirt','BlazerAndSweater','CollarAndSweater','GraphicShirt','Hoodie','Overall','ShirtCrewNeck','ShirtVNeck'];
+const AVATAR_CLOTHE_COLOR = ['Black','Blue01','Blue02','Blue03','Gray01','Gray02','PastelBlue','PastelGreen','PastelOrange','Pink','Red','White'];
+const AVATAR_EYE = ['Close','Default','Happy','Squint','Surprised','Wink','Hearts'];
+const AVATAR_MOUTH = ['Default','Smile','Smirk','Serious','Twinkle','Tongue'];
+const AVATAR_SKIN = ['Tanned','Yellow','Pale','Light','Brown','DarkBrown','Black'];
+const AVATAR_HAIR_COLOR = ['Auburn','Black','Blonde','BlondeGolden','Brown','BrownDark','PastelPink','Red'];
 
 function seededRand(seed, max) {
   const x = Math.sin(seed + 1) * 10000;
@@ -1499,134 +1500,157 @@ function seededRand(seed, max) {
 function generateAvatar(studentId, gender = 'male') {
   const s = studentId.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
   const pick = (arr, offset) => arr[seededRand(s + offset, arr.length)];
+  const topList = gender === 'female' ? AVATAR_TOP_FEMALE : AVATAR_TOP_MALE;
   return {
     gender,
-    color: pick(STAR_COLORS, 1),
-    face: pick(STAR_FACES, 4),
-    accessory: pick(STAR_ACCESSORIES, 7),
+    topType: pick(topList, 1),
+    clotheType: pick(AVATAR_CLOTHE, 2),
+    clotheColor: pick(AVATAR_CLOTHE_COLOR, 3),
+    eyeType: pick(AVATAR_EYE, 4),
+    mouthType: pick(AVATAR_MOUTH, 5),
+    skinColor: pick(AVATAR_SKIN, 6),
+    hairColor: pick(AVATAR_HAIR_COLOR, 7),
   };
 }
 
-/* ---------- SVG Avatar renderer — a cute five-pointed star character ---------- */
-// Simple, friendly star polygon (not a perfect emoji star — points are kept
-// soft/blunt so a face reads clearly in the body). Every student gets their
-// own color + face + accessory combination.
-const STAR_POINTS = '50,7 60,36 90,37 66,55 75,84 50,66.5 25,84 34,55 10,37 40,36';
+/* ---------- SVG Avatar renderer ---------- */
+const SKIN_HEX = { Tanned:'#FD9841',Yellow:'#F8D25C',Pale:'#FDDBB4',Light:'#EDB98A',Brown:'#D08B5B',DarkBrown:'#AE5D29',Black:'#614335' };
+const HAIR_HEX = { Auburn:'#A55728',Black:'#2C1B18',Blonde:'#B58143',BlondeGolden:'#D6B370',Brown:'#724133',BrownDark:'#4A312C',PastelPink:'#F59797',Red:'#C93305' };
+const CLOTHE_HEX = { Black:'#262E33',Blue01:'#65C9FF',Blue02:'#5199E4',Blue03:'#25557C',Gray01:'#E6E6E6',Gray02:'#929598',PastelBlue:'#B1E2FF',PastelGreen:'#A7FFC4',PastelOrange:'#FFDEB5',Pink:'#FF488E',Red:'#FF5C5C',White:'#FFFFFF' };
 
 function AvatarSVG({ av, size = 72 }) {
-  const color = av.color || STAR_COLORS[0];
-  const dark = color + 'CC';
-  const light = color + '55';
-  const face = av.face || 'happy';
-  const accessory = av.accessory || 'none';
+  const skin = SKIN_HEX[av.skinColor] || '#EDB98A';
+  const hair = HAIR_HEX[av.hairColor] || '#2C1B18';
+  const cloth = CLOTHE_HEX[av.clotheColor] || '#5199E4';
+  const clothDark = cloth + 'CC';
+  const isFemale = av.gender === 'female';
+  const hasHijab = av.topType === 'Hijab';
+  const skinShadow = skin + 'AA';
+  const eyeStyle = av.eyeType || 'Default';
+  const mouthStyle = av.mouthType || 'Smile';
 
   return (
     <svg width={size} height={size} viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
       <defs>
-        <radialGradient id={`star-g-${color.replace('#', '')}`} cx="42%" cy="32%" r="75%">
-          <stop offset="0%" stopColor={color} stopOpacity="1" />
-          <stop offset="100%" stopColor={dark} stopOpacity="1" />
+        <radialGradient id={`sg${av.skinColor}`} cx="40%" cy="35%" r="60%">
+          <stop offset="0%" stopColor={skin} stopOpacity="1"/>
+          <stop offset="100%" stopColor={skinShadow} stopOpacity="1"/>
+        </radialGradient>
+        <radialGradient id={`bg${av.clotheColor}`} cx="50%" cy="30%" r="70%">
+          <stop offset="0%" stopColor={cloth} stopOpacity="1"/>
+          <stop offset="100%" stopColor={clothDark} stopOpacity="1"/>
         </radialGradient>
       </defs>
 
-      {/* Star body */}
-      <polygon points={STAR_POINTS} fill={`url(#star-g-${color.replace('#', '')})`} stroke={dark} strokeWidth="1.5" strokeLinejoin="round" />
-      {/* Soft shine highlight */}
-      <ellipse cx="38" cy="32" rx="10" ry="6" fill="white" opacity="0.25" transform="rotate(-18,38,32)" />
-      {/* Cheeks */}
-      <ellipse cx="34" cy="56" rx="5" ry="3.4" fill="#FF6B81" opacity="0.35" />
-      <ellipse cx="66" cy="56" rx="5" ry="3.4" fill="#FF6B81" opacity="0.35" />
+      {/* Body / shirt with gradient */}
+      <ellipse cx="50" cy="95" rx="30" ry="18" fill={`url(#bg${av.clotheColor})`} />
+      {/* Collar detail */}
+      <path d="M42 72 Q50 78 58 72 L56 68 Q50 74 44 68 Z" fill={clothDark} opacity="0.6"/>
 
-      {/* Face */}
-      {face === 'wink' ? (
+      {/* Neck */}
+      <rect x="44" y="62" width="12" height="12" rx="4" fill={skin}/>
+      {/* Neck shadow */}
+      <rect x="44" y="68" width="12" height="6" rx="2" fill={skinShadow} opacity="0.3"/>
+
+      {/* Head base with gradient */}
+      <ellipse cx="50" cy="45" rx="22" ry="24" fill={`url(#sg${av.skinColor})`}/>
+      {/* Cheek blush */}
+      <ellipse cx="30" cy="50" rx="6" ry="4" fill="#FF9999" opacity="0.25"/>
+      <ellipse cx="70" cy="50" rx="6" ry="4" fill="#FF9999" opacity="0.25"/>
+
+      {/* Ears */}
+      <ellipse cx="28" cy="46" rx="5" ry="6" fill={skin}/>
+      <ellipse cx="72" cy="46" rx="5" ry="6" fill={skin}/>
+      <ellipse cx="28" cy="46" rx="3" ry="4" fill={skinShadow} opacity="0.3"/>
+      <ellipse cx="72" cy="46" rx="3" ry="4" fill={skinShadow} opacity="0.3"/>
+
+      {/* Hair */}
+      {hasHijab ? (
         <>
-          <path d="M36 47 Q40 43 44 47" stroke="#22223A" strokeWidth="3" fill="none" strokeLinecap="round" />
-          <ellipse cx="62" cy="46" rx="4.5" ry="5.5" fill="#22223A" />
-          <path d="M40 60 Q50 66 60 60" stroke="#22223A" strokeWidth="3" fill="none" strokeLinecap="round" />
+          <ellipse cx="50" cy="30" rx="24" ry="20" fill={hair}/>
+          <ellipse cx="50" cy="44" rx="26" ry="10" fill={hair}/>
+          <rect x="24" y="38" width="6" height="20" rx="3" fill={hair}/>
+          <rect x="70" y="38" width="6" height="20" rx="3" fill={hair}/>
         </>
-      ) : face === 'sleepy' ? (
+      ) : isFemale ? (
         <>
-          <path d="M35 47 Q39.5 50 44 47" stroke="#22223A" strokeWidth="3" fill="none" strokeLinecap="round" />
-          <path d="M56 47 Q60.5 50 65 47" stroke="#22223A" strokeWidth="3" fill="none" strokeLinecap="round" />
-          <path d="M44 61 Q50 63 56 61" stroke="#22223A" strokeWidth="3" fill="none" strokeLinecap="round" />
-        </>
-      ) : face === 'surprised' ? (
-        <>
-          <circle cx="39" cy="47" r="6.5" fill="white" stroke="#22223A" strokeWidth="1.5" />
-          <circle cx="39" cy="47" r="3.4" fill="#22223A" />
-          <circle cx="61" cy="47" r="6.5" fill="white" stroke="#22223A" strokeWidth="1.5" />
-          <circle cx="61" cy="47" r="3.4" fill="#22223A" />
-          <ellipse cx="50" cy="62" rx="5" ry="6" fill="#22223A" opacity="0.85" />
-        </>
-      ) : face === 'cool' ? (
-        <>
-          <rect x="30" y="43" width="17" height="10" rx="4" fill="#22223A" opacity="0.9" />
-          <rect x="53" y="43" width="17" height="10" rx="4" fill="#22223A" opacity="0.9" />
-          <rect x="47" y="46" width="6" height="2.5" fill="#22223A" opacity="0.9" />
-          <path d="M42 60 Q50 65 58 60" stroke="#22223A" strokeWidth="3" fill="none" strokeLinecap="round" />
-        </>
-      ) : face === 'silly' ? (
-        <>
-          <circle cx="39" cy="46" r="4.5" fill="#22223A" />
-          <circle cx="61" cy="46" r="4.5" fill="#22223A" />
-          <path d="M40 59 Q50 66 60 59" stroke="#22223A" strokeWidth="3" fill="none" strokeLinecap="round" />
-          <ellipse cx="50" cy="64" rx="4.5" ry="4" fill="#E15C6D" />
-        </>
-      ) : face === 'sparkle' ? (
-        <>
-          <path d="M35 42 L39 46 L35 50 L31 46 Z" fill="#22223A" />
-          <path d="M65 42 L69 46 L65 50 L61 46 Z" fill="#22223A" />
-          <path d="M40 59 Q50 65.5 60 59" stroke="#22223A" strokeWidth="3" fill="none" strokeLinecap="round" />
+          {/* Long hair back */}
+          <ellipse cx="50" cy="25" rx="23" ry="16" fill={hair}/>
+          <rect x="24" y="30" width="7" height="30" rx="4" fill={hair}/>
+          <rect x="69" y="30" width="7" height="30" rx="4" fill={hair}/>
+          {/* Hair shine */}
+          <ellipse cx="42" cy="22" rx="6" ry="3" fill="white" opacity="0.15" transform="rotate(-20,42,22)"/>
         </>
       ) : (
         <>
-          {/* happy — default */}
-          <circle cx="39" cy="47" r="4.6" fill="#22223A" />
-          <circle cx="40.3" cy="45.4" r="1.4" fill="white" />
-          <circle cx="61" cy="47" r="4.6" fill="#22223A" />
-          <circle cx="62.3" cy="45.4" r="1.4" fill="white" />
-          <path d="M39 60 Q50 68 61 60" stroke="#22223A" strokeWidth="3" fill="none" strokeLinecap="round" />
+          {/* Short hair */}
+          <ellipse cx="50" cy="26" rx="22" ry="14" fill={hair}/>
+          <rect x="28" y="26" width="6" height="10" rx="3" fill={hair}/>
+          <rect x="66" y="26" width="6" height="10" rx="3" fill={hair}/>
+          {/* Hair shine */}
+          <ellipse cx="43" cy="23" rx="7" ry="3" fill="white" opacity="0.15" transform="rotate(-15,43,23)"/>
         </>
       )}
 
-      {/* Accessory */}
-      {accessory === 'glasses' && (
+      {/* Eyes — big Pixar-style */}
+      {eyeStyle === 'Happy' || eyeStyle === 'Wink' ? (
         <>
-          <circle cx="39" cy="47" r="9" fill="none" stroke="#22223A" strokeWidth="2.2" />
-          <circle cx="61" cy="47" r="9" fill="none" stroke="#22223A" strokeWidth="2.2" />
-          <path d="M48 47 L52 47" stroke="#22223A" strokeWidth="2.2" />
+          <path d="M36 44 Q40 40 44 44" stroke="#1a1a1a" strokeWidth="2.5" fill="none" strokeLinecap="round"/>
+          {eyeStyle === 'Wink'
+            ? <ellipse cx="62" cy="43" rx="5" ry="6" fill="#1a1a1a"/>
+            : <path d="M56 44 Q60 40 64 44" stroke="#1a1a1a" strokeWidth="2.5" fill="none" strokeLinecap="round"/>}
+        </>
+      ) : eyeStyle === 'Surprised' ? (
+        <>
+          <circle cx="40" cy="43" r="7" fill="white" stroke="#1a1a1a" strokeWidth="1"/>
+          <circle cx="40" cy="43" r="4" fill="#1a1a1a"/>
+          <circle cx="42" cy="41" r="1.5" fill="white"/>
+          <circle cx="60" cy="43" r="7" fill="white" stroke="#1a1a1a" strokeWidth="1"/>
+          <circle cx="60" cy="43" r="4" fill="#1a1a1a"/>
+          <circle cx="62" cy="41" r="1.5" fill="white"/>
+        </>
+      ) : (
+        <>
+          {/* Normal big eyes */}
+          <ellipse cx="40" cy="43" rx="7" ry="8" fill="white" stroke="#1a1a1a" strokeWidth="1"/>
+          <ellipse cx="40" cy="44" rx="5" ry="6" fill="#3D2B1A"/>
+          <ellipse cx="40" cy="44" rx="3" ry="4" fill="#1a1a1a"/>
+          <circle cx="42" cy="42" r="2" fill="white"/>
+          <circle cx="38" cy="45" r="1" fill="white" opacity="0.5"/>
+
+          <ellipse cx="60" cy="43" rx="7" ry="8" fill="white" stroke="#1a1a1a" strokeWidth="1"/>
+          <ellipse cx="60" cy="44" rx="5" ry="6" fill="#3D2B1A"/>
+          <ellipse cx="60" cy="44" rx="3" ry="4" fill="#1a1a1a"/>
+          <circle cx="62" cy="42" r="2" fill="white"/>
+          <circle cx="58" cy="45" r="1" fill="white" opacity="0.5"/>
         </>
       )}
-      {accessory === 'bow' && (
+
+      {/* Eyebrows */}
+      <path d="M33 36 Q40 33 47 36" stroke={hair} strokeWidth="2" fill="none" strokeLinecap="round"/>
+      <path d="M53 36 Q60 33 67 36" stroke={hair} strokeWidth="2" fill="none" strokeLinecap="round"/>
+
+      {/* Nose */}
+      <path d="M48 50 Q50 54 52 50" stroke={skinShadow} strokeWidth="1.5" fill="none" strokeLinecap="round" opacity="0.6"/>
+
+      {/* Mouth */}
+      {mouthStyle === 'Smile' || mouthStyle === 'Twinkle' ? (
         <>
-          <path d="M40 20 L52 27 L40 34 Z" fill={light} stroke={dark} strokeWidth="1.5" strokeLinejoin="round" />
-          <circle cx="52" cy="27" r="3.4" fill={dark} />
+          <path d="M40 58 Q50 65 60 58" stroke="#C0392B" strokeWidth="2" fill="none" strokeLinecap="round"/>
+          <path d="M42 58 Q50 64 58 58 Q50 62 42 58 Z" fill="#E74C3C" opacity="0.5"/>
+          {mouthStyle === 'Twinkle' && <ellipse cx="50" cy="59" rx="5" ry="2" fill="white" opacity="0.6"/>}
         </>
-      )}
-      {accessory === 'bowtie' && (
+      ) : mouthStyle === 'Smirk' ? (
+        <path d="M42 58 Q52 63 60 57" stroke="#C0392B" strokeWidth="2" fill="none" strokeLinecap="round"/>
+      ) : mouthStyle === 'Serious' ? (
+        <path d="M42 59 Q50 60 58 59" stroke="#C0392B" strokeWidth="2" fill="none" strokeLinecap="round"/>
+      ) : mouthStyle === 'Tongue' ? (
         <>
-          <path d="M40 80 L50 86 L40 92 Z" fill={light} stroke={dark} strokeWidth="1.5" strokeLinejoin="round" />
-          <path d="M60 80 L50 86 L60 92 Z" fill={light} stroke={dark} strokeWidth="1.5" strokeLinejoin="round" />
-          <circle cx="50" cy="86" r="2.6" fill={dark} />
+          <path d="M40 58 Q50 65 60 58" stroke="#C0392B" strokeWidth="2" fill="none" strokeLinecap="round"/>
+          <ellipse cx="50" cy="62" rx="5" ry="4" fill="#E74C3C"/>
         </>
-      )}
-      {accessory === 'cap' && (
-        <>
-          <path d="M28 30 Q50 12 72 30 Q60 24 50 24 Q40 24 28 30 Z" fill={dark} />
-          <ellipse cx="50" cy="30" rx="24" ry="5" fill={dark} />
-          <rect x="46" y="10" width="8" height="6" rx="2" fill={dark} />
-        </>
-      )}
-      {accessory === 'crown' && (
-        <>
-          <path d="M30 25 L37 12 L44 22 L50 10 L56 22 L63 12 L70 25 Z" fill="#FFD34D" stroke="#C9963D" strokeWidth="1.5" strokeLinejoin="round" />
-          <circle cx="37" cy="12" r="2" fill="#FFD34D" />
-          <circle cx="50" cy="10" r="2" fill="#FFD34D" />
-          <circle cx="63" cy="12" r="2" fill="#FFD34D" />
-        </>
-      )}
-      {accessory === 'headband' && (
-        <rect x="17" y="34" width="66" height="6" rx="3" fill={dark} opacity="0.9" />
+      ) : (
+        <path d="M42 59 Q50 64 58 59" stroke="#C0392B" strokeWidth="2" fill="none" strokeLinecap="round"/>
       )}
     </svg>
   );
