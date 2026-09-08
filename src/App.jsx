@@ -69,6 +69,16 @@ const DEFAULT_BEHAVIORS = [
   { id: 'n6', category: 'Participation', name: 'Off-task / not focused', points: -3, type: 'negative' },
   { id: 'n7', category: 'Teamwork', name: 'Unkind to a classmate', points: -5, type: 'negative' },
   { id: 'n8', category: 'Robotics Behavior', name: 'Careless equipment handling', points: -5, type: 'negative' },
+  { id: 'n10', category: 'Respect', name: 'Inappropriate language', points: -5, type: 'negative' },
+  { id: 'n11', category: 'Responsibility', name: 'Missing homework or materials', points: -3, type: 'negative' },
+  { id: 'n12', category: 'Responsibility', name: 'Late to class', points: -3, type: 'negative' },
+  { id: 'n13', category: 'Participation', name: 'Talking out of turn', points: -3, type: 'negative' },
+  { id: 'n14', category: 'Participation', name: 'Interrupting others', points: -3, type: 'negative' },
+  { id: 'n15', category: 'Teamwork', name: 'Excluding a classmate', points: -5, type: 'negative' },
+  { id: 'n16', category: 'Digital Citizenship', name: 'Inappropriate device use', points: -5, type: 'negative' },
+  { id: 'n17', category: 'Problem Solving & Mindset', name: 'Giving up too easily', points: -3, type: 'negative' },
+  { id: 'n18', category: 'Leadership', name: 'Discouraging teammates', points: -5, type: 'negative' },
+  { id: 'n19', category: 'Robotics Behavior', name: 'Not following safety instructions', points: -5, type: 'negative' },
   // --- Focus Meter (classroom noise monitor) — only ever applied when the
   // teacher taps Confirm on a suggestion; never written automatically.
   { id: 'n9', category: 'Participation', name: 'Classroom noise level', points: -3, type: 'negative' },
@@ -207,6 +217,7 @@ function defaultState() {
     studentAvatars: {},      // { [studentId]: avatarProps }
     classGenderConfig: {},   // { [classId]: 'boys'|'girls'|'mixed' }
     rewardImages: {},        // { [rewardId]: { imageUrl, displayMode } }
+    seatingPlans: {},        // { [classId]: { desks: {[studentId]:{x,y}}, groups: [{id,name,color}], groupOf: {[studentId]:groupId} } }
   };
 }
 
@@ -303,6 +314,8 @@ async function saveSchoolData(state) {
     behaviors: state.behaviors, rewards: state.rewards, studentBadges: state.studentBadges,
     goals: state.goals, notes: state.notes, mission: state.mission, challenges: state.challenges,
     notifications: state.notifications, competitionConfig: state.competitionConfig,
+    studentAvatars: state.studentAvatars, classGenderConfig: state.classGenderConfig,
+    rewardImages: state.rewardImages, seatingPlans: state.seatingPlans,
   };
   const { error } = await supabase.from('school_data').upsert({ school_id: SCHOOL_ID, data: payload, updated_at: new Date().toISOString() }, { onConflict: 'owner_id' });
   if (error) console.error('save failed:', error.message);
@@ -1482,15 +1495,14 @@ function ClassPickerScreen({ state, classes, onPick }) {
    REDESIGN — Avatars, Analytics Dashboard, Public Homepage
    ============================================================ */
 
-/* ---------- Avatar trait tables ---------- */
-const AVATAR_TOP_MALE = ['ShortHairTheCaesar','ShortHairShortFlat','ShortHairShortRound','ShortHairShortWaved','ShortHairSides','NoHair'];
-const AVATAR_TOP_FEMALE = ['LongHairBigHair','LongHairBob','LongHairBun','LongHairCurly','LongHairStraight','LongHairStraight2','Hijab'];
-const AVATAR_CLOTHE = ['BlazerAndShirt','BlazerAndSweater','CollarAndSweater','GraphicShirt','Hoodie','Overall','ShirtCrewNeck','ShirtVNeck'];
-const AVATAR_CLOTHE_COLOR = ['Black','Blue01','Blue02','Blue03','Gray01','Gray02','PastelBlue','PastelGreen','PastelOrange','Pink','Red','White'];
-const AVATAR_EYE = ['Close','Default','Happy','Squint','Surprised','Wink','Hearts'];
-const AVATAR_MOUTH = ['Default','Smile','Smirk','Serious','Twinkle','Tongue'];
-const AVATAR_SKIN = ['Tanned','Yellow','Pale','Light','Brown','DarkBrown','Black'];
-const AVATAR_HAIR_COLOR = ['Auburn','Black','Blonde','BlondeGolden','Brown','BrownDark','PastelPink','Red'];
+/* ---------- Star-character avatar trait tables ----------
+   Every student is their own little star mascot (matching the Najm/"star"
+   brand) instead of a generic face — a different color, expression and
+   accessory combo per student, deterministic by student id so it never
+   changes on reload. */
+const STAR_COLORS = ['#F0AC2E','#FF6FA0','#4ECDC4','#8B6BF2','#5FA867','#FF8C42','#4C8DE8','#E0703D','#D64E7A','#2FBF9F','#C9963D','#7C5CFC'];
+const STAR_FACES = ['happy','wink','sleepy','surprised','cool','silly','sparkle'];
+const STAR_ACCESSORIES = ['none','bow','cap','glasses','crown','headband','bowtie'];
 
 function seededRand(seed, max) {
   const x = Math.sin(seed + 1) * 10000;
@@ -1500,157 +1512,134 @@ function seededRand(seed, max) {
 function generateAvatar(studentId, gender = 'male') {
   const s = studentId.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
   const pick = (arr, offset) => arr[seededRand(s + offset, arr.length)];
-  const topList = gender === 'female' ? AVATAR_TOP_FEMALE : AVATAR_TOP_MALE;
   return {
     gender,
-    topType: pick(topList, 1),
-    clotheType: pick(AVATAR_CLOTHE, 2),
-    clotheColor: pick(AVATAR_CLOTHE_COLOR, 3),
-    eyeType: pick(AVATAR_EYE, 4),
-    mouthType: pick(AVATAR_MOUTH, 5),
-    skinColor: pick(AVATAR_SKIN, 6),
-    hairColor: pick(AVATAR_HAIR_COLOR, 7),
+    color: pick(STAR_COLORS, 1),
+    face: pick(STAR_FACES, 4),
+    accessory: pick(STAR_ACCESSORIES, 7),
   };
 }
 
-/* ---------- SVG Avatar renderer ---------- */
-const SKIN_HEX = { Tanned:'#FD9841',Yellow:'#F8D25C',Pale:'#FDDBB4',Light:'#EDB98A',Brown:'#D08B5B',DarkBrown:'#AE5D29',Black:'#614335' };
-const HAIR_HEX = { Auburn:'#A55728',Black:'#2C1B18',Blonde:'#B58143',BlondeGolden:'#D6B370',Brown:'#724133',BrownDark:'#4A312C',PastelPink:'#F59797',Red:'#C93305' };
-const CLOTHE_HEX = { Black:'#262E33',Blue01:'#65C9FF',Blue02:'#5199E4',Blue03:'#25557C',Gray01:'#E6E6E6',Gray02:'#929598',PastelBlue:'#B1E2FF',PastelGreen:'#A7FFC4',PastelOrange:'#FFDEB5',Pink:'#FF488E',Red:'#FF5C5C',White:'#FFFFFF' };
+/* ---------- SVG Avatar renderer — a cute five-pointed star character ---------- */
+// Simple, friendly star polygon (not a perfect emoji star — points are kept
+// soft/blunt so a face reads clearly in the body). Every student gets their
+// own color + face + accessory combination.
+const STAR_POINTS = '50,7 60,36 90,37 66,55 75,84 50,66.5 25,84 34,55 10,37 40,36';
 
 function AvatarSVG({ av, size = 72 }) {
-  const skin = SKIN_HEX[av.skinColor] || '#EDB98A';
-  const hair = HAIR_HEX[av.hairColor] || '#2C1B18';
-  const cloth = CLOTHE_HEX[av.clotheColor] || '#5199E4';
-  const clothDark = cloth + 'CC';
-  const isFemale = av.gender === 'female';
-  const hasHijab = av.topType === 'Hijab';
-  const skinShadow = skin + 'AA';
-  const eyeStyle = av.eyeType || 'Default';
-  const mouthStyle = av.mouthType || 'Smile';
+  const color = av.color || STAR_COLORS[0];
+  const dark = color + 'CC';
+  const light = color + '55';
+  const face = av.face || 'happy';
+  const accessory = av.accessory || 'none';
 
   return (
     <svg width={size} height={size} viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
       <defs>
-        <radialGradient id={`sg${av.skinColor}`} cx="40%" cy="35%" r="60%">
-          <stop offset="0%" stopColor={skin} stopOpacity="1"/>
-          <stop offset="100%" stopColor={skinShadow} stopOpacity="1"/>
-        </radialGradient>
-        <radialGradient id={`bg${av.clotheColor}`} cx="50%" cy="30%" r="70%">
-          <stop offset="0%" stopColor={cloth} stopOpacity="1"/>
-          <stop offset="100%" stopColor={clothDark} stopOpacity="1"/>
+        <radialGradient id={`star-g-${color.replace('#', '')}`} cx="42%" cy="32%" r="75%">
+          <stop offset="0%" stopColor={color} stopOpacity="1" />
+          <stop offset="100%" stopColor={dark} stopOpacity="1" />
         </radialGradient>
       </defs>
 
-      {/* Body / shirt with gradient */}
-      <ellipse cx="50" cy="95" rx="30" ry="18" fill={`url(#bg${av.clotheColor})`} />
-      {/* Collar detail */}
-      <path d="M42 72 Q50 78 58 72 L56 68 Q50 74 44 68 Z" fill={clothDark} opacity="0.6"/>
+      {/* Star body */}
+      <polygon points={STAR_POINTS} fill={`url(#star-g-${color.replace('#', '')})`} stroke={dark} strokeWidth="1.5" strokeLinejoin="round" />
+      {/* Soft shine highlight */}
+      <ellipse cx="38" cy="32" rx="10" ry="6" fill="white" opacity="0.25" transform="rotate(-18,38,32)" />
+      {/* Cheeks */}
+      <ellipse cx="34" cy="56" rx="5" ry="3.4" fill="#FF6B81" opacity="0.35" />
+      <ellipse cx="66" cy="56" rx="5" ry="3.4" fill="#FF6B81" opacity="0.35" />
 
-      {/* Neck */}
-      <rect x="44" y="62" width="12" height="12" rx="4" fill={skin}/>
-      {/* Neck shadow */}
-      <rect x="44" y="68" width="12" height="6" rx="2" fill={skinShadow} opacity="0.3"/>
-
-      {/* Head base with gradient */}
-      <ellipse cx="50" cy="45" rx="22" ry="24" fill={`url(#sg${av.skinColor})`}/>
-      {/* Cheek blush */}
-      <ellipse cx="30" cy="50" rx="6" ry="4" fill="#FF9999" opacity="0.25"/>
-      <ellipse cx="70" cy="50" rx="6" ry="4" fill="#FF9999" opacity="0.25"/>
-
-      {/* Ears */}
-      <ellipse cx="28" cy="46" rx="5" ry="6" fill={skin}/>
-      <ellipse cx="72" cy="46" rx="5" ry="6" fill={skin}/>
-      <ellipse cx="28" cy="46" rx="3" ry="4" fill={skinShadow} opacity="0.3"/>
-      <ellipse cx="72" cy="46" rx="3" ry="4" fill={skinShadow} opacity="0.3"/>
-
-      {/* Hair */}
-      {hasHijab ? (
+      {/* Face */}
+      {face === 'wink' ? (
         <>
-          <ellipse cx="50" cy="30" rx="24" ry="20" fill={hair}/>
-          <ellipse cx="50" cy="44" rx="26" ry="10" fill={hair}/>
-          <rect x="24" y="38" width="6" height="20" rx="3" fill={hair}/>
-          <rect x="70" y="38" width="6" height="20" rx="3" fill={hair}/>
+          <path d="M36 47 Q40 43 44 47" stroke="#22223A" strokeWidth="3" fill="none" strokeLinecap="round" />
+          <ellipse cx="62" cy="46" rx="4.5" ry="5.5" fill="#22223A" />
+          <path d="M40 60 Q50 66 60 60" stroke="#22223A" strokeWidth="3" fill="none" strokeLinecap="round" />
         </>
-      ) : isFemale ? (
+      ) : face === 'sleepy' ? (
         <>
-          {/* Long hair back */}
-          <ellipse cx="50" cy="25" rx="23" ry="16" fill={hair}/>
-          <rect x="24" y="30" width="7" height="30" rx="4" fill={hair}/>
-          <rect x="69" y="30" width="7" height="30" rx="4" fill={hair}/>
-          {/* Hair shine */}
-          <ellipse cx="42" cy="22" rx="6" ry="3" fill="white" opacity="0.15" transform="rotate(-20,42,22)"/>
+          <path d="M35 47 Q39.5 50 44 47" stroke="#22223A" strokeWidth="3" fill="none" strokeLinecap="round" />
+          <path d="M56 47 Q60.5 50 65 47" stroke="#22223A" strokeWidth="3" fill="none" strokeLinecap="round" />
+          <path d="M44 61 Q50 63 56 61" stroke="#22223A" strokeWidth="3" fill="none" strokeLinecap="round" />
+        </>
+      ) : face === 'surprised' ? (
+        <>
+          <circle cx="39" cy="47" r="6.5" fill="white" stroke="#22223A" strokeWidth="1.5" />
+          <circle cx="39" cy="47" r="3.4" fill="#22223A" />
+          <circle cx="61" cy="47" r="6.5" fill="white" stroke="#22223A" strokeWidth="1.5" />
+          <circle cx="61" cy="47" r="3.4" fill="#22223A" />
+          <ellipse cx="50" cy="62" rx="5" ry="6" fill="#22223A" opacity="0.85" />
+        </>
+      ) : face === 'cool' ? (
+        <>
+          <rect x="30" y="43" width="17" height="10" rx="4" fill="#22223A" opacity="0.9" />
+          <rect x="53" y="43" width="17" height="10" rx="4" fill="#22223A" opacity="0.9" />
+          <rect x="47" y="46" width="6" height="2.5" fill="#22223A" opacity="0.9" />
+          <path d="M42 60 Q50 65 58 60" stroke="#22223A" strokeWidth="3" fill="none" strokeLinecap="round" />
+        </>
+      ) : face === 'silly' ? (
+        <>
+          <circle cx="39" cy="46" r="4.5" fill="#22223A" />
+          <circle cx="61" cy="46" r="4.5" fill="#22223A" />
+          <path d="M40 59 Q50 66 60 59" stroke="#22223A" strokeWidth="3" fill="none" strokeLinecap="round" />
+          <ellipse cx="50" cy="64" rx="4.5" ry="4" fill="#E15C6D" />
+        </>
+      ) : face === 'sparkle' ? (
+        <>
+          <path d="M35 42 L39 46 L35 50 L31 46 Z" fill="#22223A" />
+          <path d="M65 42 L69 46 L65 50 L61 46 Z" fill="#22223A" />
+          <path d="M40 59 Q50 65.5 60 59" stroke="#22223A" strokeWidth="3" fill="none" strokeLinecap="round" />
         </>
       ) : (
         <>
-          {/* Short hair */}
-          <ellipse cx="50" cy="26" rx="22" ry="14" fill={hair}/>
-          <rect x="28" y="26" width="6" height="10" rx="3" fill={hair}/>
-          <rect x="66" y="26" width="6" height="10" rx="3" fill={hair}/>
-          {/* Hair shine */}
-          <ellipse cx="43" cy="23" rx="7" ry="3" fill="white" opacity="0.15" transform="rotate(-15,43,23)"/>
+          {/* happy — default */}
+          <circle cx="39" cy="47" r="4.6" fill="#22223A" />
+          <circle cx="40.3" cy="45.4" r="1.4" fill="white" />
+          <circle cx="61" cy="47" r="4.6" fill="#22223A" />
+          <circle cx="62.3" cy="45.4" r="1.4" fill="white" />
+          <path d="M39 60 Q50 68 61 60" stroke="#22223A" strokeWidth="3" fill="none" strokeLinecap="round" />
         </>
       )}
 
-      {/* Eyes — big Pixar-style */}
-      {eyeStyle === 'Happy' || eyeStyle === 'Wink' ? (
+      {/* Accessory */}
+      {accessory === 'glasses' && (
         <>
-          <path d="M36 44 Q40 40 44 44" stroke="#1a1a1a" strokeWidth="2.5" fill="none" strokeLinecap="round"/>
-          {eyeStyle === 'Wink'
-            ? <ellipse cx="62" cy="43" rx="5" ry="6" fill="#1a1a1a"/>
-            : <path d="M56 44 Q60 40 64 44" stroke="#1a1a1a" strokeWidth="2.5" fill="none" strokeLinecap="round"/>}
-        </>
-      ) : eyeStyle === 'Surprised' ? (
-        <>
-          <circle cx="40" cy="43" r="7" fill="white" stroke="#1a1a1a" strokeWidth="1"/>
-          <circle cx="40" cy="43" r="4" fill="#1a1a1a"/>
-          <circle cx="42" cy="41" r="1.5" fill="white"/>
-          <circle cx="60" cy="43" r="7" fill="white" stroke="#1a1a1a" strokeWidth="1"/>
-          <circle cx="60" cy="43" r="4" fill="#1a1a1a"/>
-          <circle cx="62" cy="41" r="1.5" fill="white"/>
-        </>
-      ) : (
-        <>
-          {/* Normal big eyes */}
-          <ellipse cx="40" cy="43" rx="7" ry="8" fill="white" stroke="#1a1a1a" strokeWidth="1"/>
-          <ellipse cx="40" cy="44" rx="5" ry="6" fill="#3D2B1A"/>
-          <ellipse cx="40" cy="44" rx="3" ry="4" fill="#1a1a1a"/>
-          <circle cx="42" cy="42" r="2" fill="white"/>
-          <circle cx="38" cy="45" r="1" fill="white" opacity="0.5"/>
-
-          <ellipse cx="60" cy="43" rx="7" ry="8" fill="white" stroke="#1a1a1a" strokeWidth="1"/>
-          <ellipse cx="60" cy="44" rx="5" ry="6" fill="#3D2B1A"/>
-          <ellipse cx="60" cy="44" rx="3" ry="4" fill="#1a1a1a"/>
-          <circle cx="62" cy="42" r="2" fill="white"/>
-          <circle cx="58" cy="45" r="1" fill="white" opacity="0.5"/>
+          <circle cx="39" cy="47" r="9" fill="none" stroke="#22223A" strokeWidth="2.2" />
+          <circle cx="61" cy="47" r="9" fill="none" stroke="#22223A" strokeWidth="2.2" />
+          <path d="M48 47 L52 47" stroke="#22223A" strokeWidth="2.2" />
         </>
       )}
-
-      {/* Eyebrows */}
-      <path d="M33 36 Q40 33 47 36" stroke={hair} strokeWidth="2" fill="none" strokeLinecap="round"/>
-      <path d="M53 36 Q60 33 67 36" stroke={hair} strokeWidth="2" fill="none" strokeLinecap="round"/>
-
-      {/* Nose */}
-      <path d="M48 50 Q50 54 52 50" stroke={skinShadow} strokeWidth="1.5" fill="none" strokeLinecap="round" opacity="0.6"/>
-
-      {/* Mouth */}
-      {mouthStyle === 'Smile' || mouthStyle === 'Twinkle' ? (
+      {accessory === 'bow' && (
         <>
-          <path d="M40 58 Q50 65 60 58" stroke="#C0392B" strokeWidth="2" fill="none" strokeLinecap="round"/>
-          <path d="M42 58 Q50 64 58 58 Q50 62 42 58 Z" fill="#E74C3C" opacity="0.5"/>
-          {mouthStyle === 'Twinkle' && <ellipse cx="50" cy="59" rx="5" ry="2" fill="white" opacity="0.6"/>}
+          <path d="M40 20 L52 27 L40 34 Z" fill={light} stroke={dark} strokeWidth="1.5" strokeLinejoin="round" />
+          <circle cx="52" cy="27" r="3.4" fill={dark} />
         </>
-      ) : mouthStyle === 'Smirk' ? (
-        <path d="M42 58 Q52 63 60 57" stroke="#C0392B" strokeWidth="2" fill="none" strokeLinecap="round"/>
-      ) : mouthStyle === 'Serious' ? (
-        <path d="M42 59 Q50 60 58 59" stroke="#C0392B" strokeWidth="2" fill="none" strokeLinecap="round"/>
-      ) : mouthStyle === 'Tongue' ? (
+      )}
+      {accessory === 'bowtie' && (
         <>
-          <path d="M40 58 Q50 65 60 58" stroke="#C0392B" strokeWidth="2" fill="none" strokeLinecap="round"/>
-          <ellipse cx="50" cy="62" rx="5" ry="4" fill="#E74C3C"/>
+          <path d="M40 80 L50 86 L40 92 Z" fill={light} stroke={dark} strokeWidth="1.5" strokeLinejoin="round" />
+          <path d="M60 80 L50 86 L60 92 Z" fill={light} stroke={dark} strokeWidth="1.5" strokeLinejoin="round" />
+          <circle cx="50" cy="86" r="2.6" fill={dark} />
         </>
-      ) : (
-        <path d="M42 59 Q50 64 58 59" stroke="#C0392B" strokeWidth="2" fill="none" strokeLinecap="round"/>
+      )}
+      {accessory === 'cap' && (
+        <>
+          <path d="M28 30 Q50 12 72 30 Q60 24 50 24 Q40 24 28 30 Z" fill={dark} />
+          <ellipse cx="50" cy="30" rx="24" ry="5" fill={dark} />
+          <rect x="46" y="10" width="8" height="6" rx="2" fill={dark} />
+        </>
+      )}
+      {accessory === 'crown' && (
+        <>
+          <path d="M30 25 L37 12 L44 22 L50 10 L56 22 L63 12 L70 25 Z" fill="#FFD34D" stroke="#C9963D" strokeWidth="1.5" strokeLinejoin="round" />
+          <circle cx="37" cy="12" r="2" fill="#FFD34D" />
+          <circle cx="50" cy="10" r="2" fill="#FFD34D" />
+          <circle cx="63" cy="12" r="2" fill="#FFD34D" />
+        </>
+      )}
+      {accessory === 'headband' && (
+        <rect x="17" y="34" width="66" height="6" rx="3" fill={dark} opacity="0.9" />
       )}
     </svg>
   );
@@ -1830,148 +1819,269 @@ function AvatarClassroomTab({ state, persist, classId, COLORS, onAward }) {
 }
 
 /* ---------- Seating Plans Module ---------- */
-function SeatingPlansModule({ state, persist, COLORS, onAward }) {
-  const [layout, setLayout] = React.useState(state.seatingPlans?.layout || 'default');
+/* ---------- Seating Plans — drag & drop desks, plus a separate Groups & Pairs screen ---------- */
+const GROUP_COLOR_PALETTE = ['#F0AC2E','#4C8DE8','#5FA867','#D64E7A','#8B6BF2','#FF8C42','#2FBF9F','#E0703D','#C9963D','#FF6FA0'];
+
+function emptySeatingPlan() { return { desks: {}, groups: [], groupOf: {} }; }
+
+// Deterministic starting grid position (percent of the board) for a desk
+// that hasn't been dragged yet, so nothing overlaps before the teacher
+// touches anything.
+function defaultDeskPos(index, total) {
+  const cols = Math.max(1, Math.min(6, Math.ceil(Math.sqrt(total || 1))));
+  const row = Math.floor(index / cols);
+  const col = index % cols;
+  const xPad = 10, yPad = 12;
+  const xStep = cols > 1 ? (100 - xPad * 2) / (cols - 1) : 0;
+  const yStep = 22;
+  return { x: cols > 1 ? xPad + col * xStep : 50, y: yPad + row * yStep };
+}
+
+function SeatingPlansModule({ state, persist, classId, COLORS, onAward }) {
+  const [mode, setMode] = React.useState('desks'); // 'desks' | 'groups'
   const students = state.students || [];
+  const planKey = classId || 'all';
+  const plan = state.seatingPlans?.[planKey] || emptySeatingPlan();
 
-  function generatePairs(students) {
-    const shuffled = [...students].sort((a,b) => a.id.localeCompare(b.id));
-    const pairs = [];
-    for (let i = 0; i < shuffled.length; i += 2) {
-      pairs.push({ id: 'pair_'+i, students: shuffled.slice(i, i+2) });
-    }
-    return pairs;
-  }
-
-  function generateGroups(students, size=4) {
-    const shuffled = [...students].sort((a,b) => a.id.localeCompare(b.id));
-    const groups = [];
-    for (let i = 0; i < shuffled.length; i += size) {
-      groups.push({ id: 'group_'+i, tableNumber: Math.floor(i/size)+1, students: shuffled.slice(i, i+size) });
-    }
-    return groups;
-  }
-
-  const pairs = generatePairs(students);
-  const groups = generateGroups(students, 4);
-
-  function awardGroup(studentIds, points, label) {
-    if (!studentIds.length) return;
-    const behaviors = state.behaviors.filter(b=>b.type==='positive');
-    const behavior = behaviors[0];
-    if (!behavior) return;
-    onAward({ studentIds, behaviorIds:[behavior.id], pointsOverride:points, comment:`Group bonus: ${label}` });
-  }
-
-  const medalColor = ['#F0AC2E','#C0C0C0','#CD7F32','#7C5CFC','#2F9E8F'];
+  const updatePlan = React.useCallback((updater) => {
+    persist(prev => {
+      const prevPlan = prev.seatingPlans?.[planKey] || emptySeatingPlan();
+      const nextPlan = updater(prevPlan);
+      return { ...prev, seatingPlans: { ...(prev.seatingPlans || {}), [planKey]: nextPlan } };
+    });
+  }, [persist, planKey]);
 
   return (
     <div>
-      <div style={{marginBottom:20}}>
-        <h2 style={{fontSize:20,fontWeight:'bold',color:COLORS.text,margin:'0 0 4px'}}>🪑 Seating Plans</h2>
-        <p style={{margin:0,fontSize:12,color:COLORS.textMuted}}>Arrange students and award group bonuses</p>
+      <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 10 }}>
+        <div>
+          <h2 style={{ fontSize: 20, fontWeight: 'bold', color: COLORS.text, margin: '0 0 4px' }}>🪑 Seating Plans</h2>
+          <p style={{ margin: 0, fontSize: 12, color: COLORS.textMuted }}>
+            {mode === 'desks' ? 'Drag a desk anywhere to arrange the room' : 'Drag students into colored groups or pairs'}
+          </p>
+        </div>
+        <div style={{ display: 'flex', gap: 6 }}>
+          {[{ v: 'desks', l: '🪑 Desks' }, { v: 'groups', l: '👥 Groups & Pairs' }].map(opt => (
+            <button key={opt.v} onClick={() => setMode(opt.v)}
+              style={{ padding: '8px 16px', borderRadius: 10, border: `2px solid ${mode === opt.v ? COLORS.robotics : COLORS.border}`, background: mode === opt.v ? COLORS.robotics : 'white', color: mode === opt.v ? 'white' : COLORS.textMuted, fontWeight: 'bold', cursor: 'pointer', fontSize: 13 }}>
+              {opt.l}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* Layout switcher */}
-      <div style={{display:'flex',gap:8,marginBottom:24}}>
-        {[{v:'default',l:'📋 Default'},{v:'pairs',l:'👫 Pairs'},{v:'groups',l:'🪑 Groups'}].map(opt=>(
-          <button key={opt.v} onClick={()=>setLayout(opt.v)}
-            style={{padding:'8px 18px',borderRadius:10,border:`2px solid ${layout===opt.v?COLORS.robotics:COLORS.border}`,background:layout===opt.v?COLORS.robotics:'white',color:layout===opt.v?'white':COLORS.textMuted,fontWeight:'bold',cursor:'pointer',fontSize:13}}>
-            {opt.l}
-          </button>
-        ))}
-      </div>
-
-      {students.length === 0 && (
-        <div style={{textAlign:'center',padding:48,color:COLORS.textMuted,background:COLORS.panelAlt,borderRadius:16}}>
+      {students.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: 48, color: COLORS.textMuted, background: COLORS.panelAlt, borderRadius: 16 }}>
           No students yet. Add students to use seating plans!
         </div>
+      ) : mode === 'desks' ? (
+        <DeskSeatingBoard students={students} plan={plan} updatePlan={updatePlan} state={state} COLORS={COLORS} onAward={onAward} />
+      ) : (
+        <GroupSeatingBoard students={students} plan={plan} updatePlan={updatePlan} state={state} COLORS={COLORS} onAward={onAward} />
       )}
+    </div>
+  );
+}
 
-      {/* Default layout */}
-      {layout==='default' && students.length > 0 && (
-        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(100px,1fr))',gap:12}}>
-          {students.map((s,i)=>(
-            <div key={s.id} style={{background:COLORS.panel,border:`1px solid ${COLORS.border}`,borderRadius:12,padding:12,textAlign:'center'}}>
-              <div style={{width:44,height:44,borderRadius:'50%',background:`${medalColor[i%5]}22`,border:`2px solid ${medalColor[i%5]}`,display:'flex',alignItems:'center',justifyContent:'center',margin:'0 auto 6px',fontSize:20,overflow:'hidden'}}>
-                {state.studentAvatars?.[s.id]
-                  ? <AvatarSVG av={state.studentAvatars[s.id]} size={40}/>
-                  : <span>{s.name[0]}</span>}
+/* ---------- Desks: freeform drag-and-drop board ---------- */
+function DeskSeatingBoard({ students, plan, updatePlan, state, COLORS, onAward }) {
+  const boardRef = React.useRef(null);
+  const [dragOverBoard, setDragOverBoard] = React.useState(false);
+
+  function handleAward(studentId, behaviorId, points) {
+    onAward({ studentIds: [studentId], behaviorIds: [behaviorId], pointsOverride: points, comment: '' });
+  }
+  function handleDrop(e) {
+    e.preventDefault();
+    setDragOverBoard(false);
+    const studentId = e.dataTransfer.getData('text/plain');
+    if (!studentId || !boardRef.current) return;
+    const rect = boardRef.current.getBoundingClientRect();
+    const x = Math.max(2, Math.min(98, ((e.clientX - rect.left) / rect.width) * 100));
+    const y = Math.max(4, Math.min(96, ((e.clientY - rect.top) / rect.height) * 100));
+    updatePlan(prev => ({ ...prev, desks: { ...prev.desks, [studentId]: { x, y } } }));
+  }
+  function resetLayout() {
+    updatePlan(prev => ({ ...prev, desks: {} }));
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
+        <button onClick={resetLayout} style={{ fontSize: 11, padding: '5px 12px', borderRadius: 8, border: `1px solid ${COLORS.border}`, background: 'white', color: COLORS.textMuted, fontWeight: 'bold', cursor: 'pointer' }}>
+          Reset Layout
+        </button>
+      </div>
+      <div
+        ref={boardRef}
+        onDragOver={e => { e.preventDefault(); setDragOverBoard(true); }}
+        onDragLeave={() => setDragOverBoard(false)}
+        onDrop={handleDrop}
+        style={{
+          position: 'relative', width: '100%', minHeight: 460, borderRadius: 16,
+          background: dragOverBoard ? `${COLORS.robotics}0C` : COLORS.panelAlt,
+          border: `2px dashed ${dragOverBoard ? COLORS.robotics : COLORS.border}`,
+          overflow: 'hidden',
+        }}
+      >
+        {/* "Front of room" hint */}
+        <div style={{ position: 'absolute', top: 8, left: '50%', transform: 'translateX(-50%)', fontSize: 10, fontWeight: 'bold', color: COLORS.textFaint, letterSpacing: 1, textTransform: 'uppercase' }}>
+          Front of room
+        </div>
+        {students.map((s, i) => {
+          const pos = plan.desks[s.id] || defaultDeskPos(i, students.length);
+          const xp = totalXP(state, s.id);
+          return (
+            <div
+              key={s.id}
+              draggable
+              onDragStart={e => e.dataTransfer.setData('text/plain', s.id)}
+              style={{
+                position: 'absolute', left: `${pos.x}%`, top: `${pos.y}%`, transform: 'translate(-50%, -50%)',
+                width: 92, background: COLORS.panel, border: `1.5px solid ${COLORS.border}`, borderRadius: 12,
+                padding: '8px 6px', textAlign: 'center', cursor: 'grab', boxShadow: '0 2px 6px rgba(20,30,60,0.08)',
+                userSelect: 'none',
+              }}
+              title="Drag to move this desk"
+            >
+              <div style={{ width: 40, height: 40, margin: '0 auto 4px', pointerEvents: 'auto' }}>
+                <StudentAvatar student={s} size="sm" clickable onAward={handleAward} showName={false} state={state} COLORS={COLORS} />
               </div>
-              <div style={{fontSize:11,fontWeight:'bold',color:COLORS.text}}>{s.name}</div>
-              <div style={{fontSize:10,color:COLORS.xp}}>{totalXP(state,s.id)} XP</div>
+              <div style={{ fontSize: 10.5, fontWeight: 'bold', color: COLORS.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.name}</div>
+              <div style={{ fontSize: 9, color: COLORS.xp, fontWeight: 'bold' }}>{xp} XP</div>
             </div>
-          ))}
+          );
+        })}
+      </div>
+      <div style={{ fontSize: 10.5, color: COLORS.textFaint, marginTop: 8, textAlign: 'center' }}>
+        Drag a desk to reposition it • click a student's avatar to award points
+      </div>
+    </div>
+  );
+}
+
+/* ---------- Groups & Pairs: colored group containers, drag students in/out ---------- */
+function GroupSeatingBoard({ students, plan, updatePlan, state, COLORS, onAward }) {
+  const groups = plan.groups || [];
+  const groupOf = plan.groupOf || {};
+  const validGroupIds = new Set(groups.map(g => g.id));
+  const unassigned = students.filter(s => !groupOf[s.id] || !validGroupIds.has(groupOf[s.id]));
+
+  function addGroup(size) {
+    const color = GROUP_COLOR_PALETTE[groups.length % GROUP_COLOR_PALETTE.length];
+    const name = size === 2 ? `Pair ${groups.filter(g => g.kind === 'pair').length + 1}` : `Group ${groups.filter(g => g.kind !== 'pair').length + 1}`;
+    const entry = { id: uid('grp'), name, color, kind: size === 2 ? 'pair' : 'group' };
+    updatePlan(prev => ({ ...prev, groups: [...(prev.groups || []), entry] }));
+  }
+  function renameGroup(id, name) {
+    updatePlan(prev => ({ ...prev, groups: (prev.groups || []).map(g => g.id === id ? { ...g, name } : g) }));
+  }
+  function recolorGroup(id, color) {
+    updatePlan(prev => ({ ...prev, groups: (prev.groups || []).map(g => g.id === id ? { ...g, color } : g) }));
+  }
+  function removeGroup(id) {
+    updatePlan(prev => ({
+      ...prev,
+      groups: (prev.groups || []).filter(g => g.id !== id),
+      groupOf: Object.fromEntries(Object.entries(prev.groupOf || {}).filter(([, gid]) => gid !== id)),
+    }));
+  }
+  function assignStudent(studentId, groupId) {
+    updatePlan(prev => ({ ...prev, groupOf: { ...prev.groupOf, [studentId]: groupId || undefined } }));
+  }
+  function awardGroup(group, points) {
+    const members = students.filter(s => groupOf[s.id] === group.id).map(s => s.id);
+    if (!members.length) return;
+    const behaviors = state.behaviors.filter(b => b.type === 'positive');
+    const behavior = behaviors[0];
+    if (!behavior) return;
+    onAward({ studentIds: members, behaviorIds: [behavior.id], pointsOverride: points, comment: `${group.kind === 'pair' ? 'Pair' : 'Group'} bonus: ${group.name}` });
+  }
+
+  function onDropTo(groupId) {
+    return e => {
+      e.preventDefault();
+      const studentId = e.dataTransfer.getData('text/plain');
+      if (studentId) assignStudent(studentId, groupId);
+    };
+  }
+  function allowDrop(e) { e.preventDefault(); }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+        <button onClick={() => addGroup(4)} style={{ fontSize: 12, padding: '8px 16px', borderRadius: 10, border: 'none', background: COLORS.robotics, color: 'white', fontWeight: 'bold', cursor: 'pointer' }}>+ Add Group</button>
+        <button onClick={() => addGroup(2)} style={{ fontSize: 12, padding: '8px 16px', borderRadius: 10, border: `2px solid ${COLORS.robotics}`, background: 'white', color: COLORS.robotics, fontWeight: 'bold', cursor: 'pointer' }}>+ Add Pair</button>
+      </div>
+
+      {/* Unassigned pool */}
+      <div
+        onDragOver={allowDrop}
+        onDrop={onDropTo(undefined)}
+        style={{ background: COLORS.panelAlt, border: `2px dashed ${COLORS.border}`, borderRadius: 14, padding: 14, marginBottom: 20, minHeight: 74 }}
+      >
+        <div style={{ fontSize: 11, fontWeight: 'bold', color: COLORS.textFaint, marginBottom: 8, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+          Unassigned ({unassigned.length})
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          {unassigned.map(s => <StudentChip key={s.id} student={s} state={state} COLORS={COLORS} />)}
+          {unassigned.length === 0 && <div style={{ fontSize: 11, color: COLORS.textFaint }}>Everyone is placed in a group.</div>}
+        </div>
+      </div>
+
+      {groups.length === 0 && (
+        <div style={{ textAlign: 'center', padding: 32, color: COLORS.textMuted, background: COLORS.panelAlt, borderRadius: 14 }}>
+          No groups yet — tap "Add Group" or "Add Pair" to create one, then drag students in.
         </div>
       )}
 
-      {/* Pairs layout */}
-      {layout==='pairs' && students.length > 0 && (
-        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(220px,1fr))',gap:16}}>
-          {pairs.map((pair,i)=>(
-            <div key={pair.id} style={{background:COLORS.panel,border:`2px solid ${COLORS.border}`,borderRadius:14,padding:16}}>
-              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}>
-                <div style={{fontSize:12,fontWeight:'bold',color:COLORS.textMuted}}>Desk {i+1}</div>
-                <button onClick={()=>awardGroup(pair.students.map(s=>s.id), 5, `Desk ${i+1} Pair Bonus`)}
-                  style={{fontSize:11,padding:'4px 10px',borderRadius:8,border:'none',background:COLORS.behavior,color:'white',fontWeight:'bold',cursor:'pointer'}}>
-                  +5 XP Pair Bonus
-                </button>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(240px,1fr))', gap: 18 }}>
+        {groups.map(g => {
+          const members = students.filter(s => groupOf[s.id] === g.id);
+          return (
+            <div key={g.id}
+              onDragOver={allowDrop}
+              onDrop={onDropTo(g.id)}
+              style={{ background: COLORS.panel, border: `2.5px solid ${g.color}`, borderRadius: 16, padding: 16 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                <div style={{ width: 14, height: 14, borderRadius: '50%', background: g.color, flexShrink: 0 }} />
+                <input value={g.name} onChange={e => renameGroup(g.id, e.target.value)}
+                  style={{ flex: 1, minWidth: 0, fontSize: 14, fontWeight: 'bold', color: COLORS.text, border: 'none', outline: 'none', background: 'transparent' }} />
+                <button onClick={() => removeGroup(g.id)} aria-label={`Delete ${g.name}`} style={{ background: 'none', border: 'none', color: COLORS.textFaint, cursor: 'pointer', flexShrink: 0 }}><Trash2 size={14} /></button>
               </div>
-              <div style={{display:'flex',gap:12,justifyContent:'center'}}>
-                {pair.students.map(s=>(
-                  <div key={s.id} style={{textAlign:'center'}}>
-                    <div style={{width:52,height:52,borderRadius:'50%',overflow:'hidden',border:`2px solid ${COLORS.robotics}`,background:COLORS.panelAlt,margin:'0 auto 4px'}}>
-                      {state.studentAvatars?.[s.id]
-                        ? <AvatarSVG av={state.studentAvatars[s.id]} size={48}/>
-                        : <span style={{fontSize:22,lineHeight:'48px',display:'block'}}>{s.name[0]}</span>}
-                    </div>
-                    <div style={{fontSize:11,fontWeight:'bold',color:COLORS.text}}>{s.name}</div>
-                    <div style={{fontSize:10,color:COLORS.xp}}>{totalXP(state,s.id)} XP</div>
-                  </div>
+              <div style={{ display: 'flex', gap: 4, marginBottom: 12 }}>
+                {GROUP_COLOR_PALETTE.map(c => (
+                  <button key={c} onClick={() => recolorGroup(g.id, c)} aria-label={`Color ${c}`}
+                    style={{ width: 14, height: 14, borderRadius: '50%', background: c, border: c === g.color ? `2px solid ${COLORS.text}` : '1px solid rgba(0,0,0,0.1)', cursor: 'pointer', padding: 0 }} />
                 ))}
-                {pair.students.length === 1 && (
-                  <div style={{width:52,height:52,borderRadius:'50%',background:COLORS.panelAlt,border:`2px dashed ${COLORS.border}`,display:'flex',alignItems:'center',justifyContent:'center',color:COLORS.textFaint,fontSize:20}}>?</div>
-                )}
               </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, minHeight: 48, marginBottom: 12 }}>
+                {members.map(s => <StudentChip key={s.id} student={s} state={state} COLORS={COLORS} />)}
+                {members.length === 0 && <div style={{ fontSize: 11, color: COLORS.textFaint }}>Drag students here</div>}
+              </div>
+              <button onClick={() => awardGroup(g, g.kind === 'pair' ? 5 : 10)} disabled={!members.length}
+                style={{ width: '100%', fontSize: 11.5, padding: '7px 0', borderRadius: 8, border: 'none', background: members.length ? g.color : COLORS.panelSoft, color: members.length ? 'white' : COLORS.textFaint, fontWeight: 'bold', cursor: members.length ? 'pointer' : 'not-allowed' }}>
+                +{g.kind === 'pair' ? 5 : 10} XP {g.kind === 'pair' ? 'Pair' : 'Group'} Bonus
+              </button>
             </div>
-          ))}
-        </div>
-      )}
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
-      {/* Groups layout */}
-      {layout==='groups' && students.length > 0 && (
-        <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(280px,1fr))',gap:20}}>
-          {groups.map((group,i)=>(
-            <div key={group.id} style={{background:COLORS.panel,border:`2px solid ${medalColor[i%5]}55`,borderRadius:16,padding:18}}>
-              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:14}}>
-                <div style={{fontWeight:'bold',fontSize:14,color:COLORS.text,display:'flex',alignItems:'center',gap:8}}>
-                  <div style={{width:28,height:28,borderRadius:'50%',background:medalColor[i%5],color:'white',display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,fontWeight:'bold'}}>{group.tableNumber}</div>
-                  Table {group.tableNumber}
-                </div>
-                <button onClick={()=>awardGroup(group.students.map(s=>s.id), 10, `Table ${group.tableNumber} Bonus`)}
-                  style={{fontSize:11,padding:'6px 12px',borderRadius:8,border:'none',background:medalColor[i%5],color:'white',fontWeight:'bold',cursor:'pointer'}}>
-                  +10 XP
-                </button>
-              </div>
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
-                {group.students.map(s=>(
-                  <div key={s.id} style={{display:'flex',alignItems:'center',gap:8,background:COLORS.panelAlt,borderRadius:10,padding:'8px 10px'}}>
-                    <div style={{width:40,height:40,borderRadius:'50%',overflow:'hidden',border:`2px solid ${medalColor[i%5]}`,background:'white',flexShrink:0}}>
-                      {state.studentAvatars?.[s.id]
-                        ? <AvatarSVG av={state.studentAvatars[s.id]} size={36}/>
-                        : <span style={{fontSize:18,lineHeight:'36px',display:'block',textAlign:'center'}}>{s.name[0]}</span>}
-                    </div>
-                    <div>
-                      <div style={{fontSize:11,fontWeight:'bold',color:COLORS.text}}>{s.name}</div>
-                      <div style={{fontSize:10,color:COLORS.xp}}>{totalXP(state,s.id)} XP</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+// Small draggable student pill used inside the Groups & Pairs board.
+function StudentChip({ student, state, COLORS }) {
+  const av = state.studentAvatars?.[student.id];
+  return (
+    <div draggable onDragStart={e => e.dataTransfer.setData('text/plain', student.id)}
+      style={{ display: 'flex', alignItems: 'center', gap: 6, background: COLORS.panelAlt, border: `1px solid ${COLORS.border}`, borderRadius: 20, padding: '4px 10px 4px 4px', cursor: 'grab', userSelect: 'none' }}
+      title="Drag to move">
+      <div style={{ width: 26, height: 26, borderRadius: '50%', overflow: 'hidden', background: COLORS.panel, flexShrink: 0 }}>
+        {av ? <AvatarSVG av={av} size={26} /> : <span style={{ fontSize: 12, lineHeight: '26px', display: 'block', textAlign: 'center' }}>{student.name[0]}</span>}
+      </div>
+      <span style={{ fontSize: 11.5, fontWeight: 'bold', color: COLORS.text, whiteSpace: 'nowrap' }}>{student.name}</span>
     </div>
   );
 }
@@ -1986,7 +2096,9 @@ function StudentReportGenerator({ state, persist, COLORS }) {
   const [copied, setCopied] = React.useState(false);
 
   const POSITIVE = ['Active Participation','Team Player','Problem Solver','Focused Effort','Creative Thinker','Respectful Listener','Takes Initiative','Helpful to Peers','Shows Leadership','Positive Attitude'];
-  const AREAS = ['Distracted in Class','Disrupting Others','Unprepared','Late to Task','Needs Reminders','Off-Task','Rushed Work','Needs More Support'];
+  const AREAS = ['Distracted in Class','Disrupting Others','Unprepared','Late to Task','Needs Reminders','Off-Task','Rushed Work','Needs More Support',
+    'Talking Out of Turn','Difficulty Following Directions','Incomplete Homework','Struggles with Time Management','Conflict with Peers',
+    'Negative Attitude','Needs Frequent Redirection','Careless with Materials','Difficulty Staying Focused','Needs to Build Confidence'];
 
   const student = state.students.find(s=>s.id===selectedStudentId);
   const xp = student ? totalXP(state, selectedStudentId) : 0;
@@ -1995,29 +2107,40 @@ function StudentReportGenerator({ state, persist, COLORS }) {
     setArr(prev => prev.includes(item) ? prev.filter(x=>x!==item) : [...prev, item]);
   }
 
+  // IMPORTANT: this never calls api.anthropic.com directly from the browser
+  // — that always fails, because it would mean shipping your API key inside
+  // the app's public JavaScript, and Anthropic's API also doesn't allow
+  // direct browser (CORS) requests. Instead this calls your OWN backend
+  // route (/api/generate-report, a Vercel serverless function), which holds
+  // the API key server-side. See api/generate-report.js.
   async function generateReport() {
     if (!student) return;
     setLoading(true);
     setGeneratedReport('');
     try {
-      const prompt = `Write a short, positive and professional student progress note (2-3 sentences) for a student named ${student.name}.
-Positive attitudes shown: ${positiveAttitudes.length ? positiveAttitudes.join(', ') : 'none selected'}.
-Areas for improvement: ${areasForImprovement.length ? areasForImprovement.join(', ') : 'none selected'}.
-Total XP earned: ${xp}.
-Keep it encouraging, specific, and suitable for a parent-teacher report. Do not use bullet points.`;
-
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
+      const response = await fetch('/api/generate-report', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-6',
-          max_tokens: 200,
-          messages: [{ role: 'user', content: prompt }],
+          studentName: student.name,
+          positiveAttitudes,
+          areasForImprovement,
+          xp,
         }),
       });
-      const data = await response.json();
-      const text = data.content?.[0]?.text || 'Could not generate report. Please try again.';
-      setGeneratedReport(text);
+      let data;
+      try { data = await response.json(); } catch { data = null; }
+      if (!response.ok) {
+        const reason = data?.error || `Server responded with ${response.status}`;
+        setGeneratedReport(
+          response.status === 404
+            ? 'AI reports aren\u2019t set up on this deployment yet \u2014 the /api/generate-report backend route is missing. See api/generate-report.js in this handoff.'
+            : `Could not generate report: ${reason}`
+        );
+        setLoading(false);
+        return;
+      }
+      setGeneratedReport(data?.text || 'Could not generate report. Please try again.');
     } catch (e) {
       setGeneratedReport('Error generating report. Please check your connection and try again.');
     }
@@ -3328,7 +3451,7 @@ function TeacherApp({ state, persist, classId, email, setToast, db, session, man
         {tab === 'classes' && <TeacherClassesTab state={state} classes={manageableClasses || []} activeClassId={classId} db={db} onSwitch={onSwitchClass} />}
         {tab === 'analytics-new' && <TeacherAnalyticsDashboard state={scoped} classId={classId} COLORS={COLORS} />}
         {tab === 'reports' && <StudentReportGenerator state={scoped} persist={persist} COLORS={COLORS} />}
-        {tab === 'seating' && <SeatingPlansModule state={scoped} persist={persist} COLORS={COLORS} onAward={awardBehavior} />}
+        {tab === 'seating' && <SeatingPlansModule state={scoped} persist={persist} classId={classId} COLORS={COLORS} onAward={awardBehavior} />}
         {tab === 'assessments' && <AssessmentsTab state={scoped} persist={persist} classId={classId} email={email} setToast={setToast} db={db} session={session} />}
         {tab === 'challenges' && <ChallengesTab state={state} persist={persist} classId={classId} scopedStudents={scoped.students} isAdmin={!classId} db={db} session={session} />}
         {tab === 'missions' && <MissionsTab state={scoped} persist={persist} classId={classId} db={db} session={session} />}
